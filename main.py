@@ -10,8 +10,8 @@ import re
 import requests
 
 GITLAB_URL_REGEX = re.compile(
-    r"https:\/\/gitlab\.com\/(?P<orga>[a-zA-Z0-9\-]+)\/"
-    r"(?P<project>[a-zA-Z0-9\-]+)\/-\/issues\/(?P<issue>[0-9]+)")
+    r"https:\/\/gitlab\.com\/(?P<orga>[a-zA-Z0-9\-\_]+)\/"
+    r"(?P<project>[a-zA-Z0-9\-\_]+)\/-\/issues\/(?P<issue>[0-9]+)")
 
 
 def parse_args() -> argparse.Namespace:
