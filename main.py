@@ -30,8 +30,8 @@ def parse_args() -> argparse.Namespace:
     # fetch_parser.add_argument('gitlab_group_id', help='GitLab group')
     fetch_parser.add_argument('token', help='Token for the GitLab API')
 
-    # fetch_parser.add_argument("--overwrite", action="store_true",
-    #                          help="Overwrite existing weights")
+    fetch_parser.add_argument("--overwrite", action="store_true",
+                              help="Overwrite existing weights")
 
     return parser.parse_args()
 
@@ -45,7 +45,7 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO)
 
     plans = get_plans(args.battleid, args.api_key)
-    transfer_points(plans, args.token)
+    transfer_points(plans, args.token, args.overwrite)
 
 
 def get_plans(battle_id: str, api_key: str) -> list[dict]:
@@ -79,12 +79,13 @@ def get_plans(battle_id: str, api_key: str) -> list[dict]:
     return payload["data"]["plans"]
 
 
-def transfer_points(plans: list[dict], gitlab_token: str) -> None:
+def transfer_points(plans: list[dict], gitlab_token: str, overwrite: bool = False) -> None:
     """
     Transfer points to GitLab issues.
 
-    :param args: Command line arguments.
     :param plans: Plans from the Thunderdome game.
+    :param gitlab_token: Token for the GitLab API.
+    :param overwrite: True to overwrite existing weights, False to preserve existing weights.
     """
     logging.info("Transferring points to GitLab...")
 
@@ -95,9 +96,8 @@ def transfer_points(plans: list[dict], gitlab_token: str) -> None:
     for plan in plans:
         link = plan["link"]
         if not link:
-            logging.warning("No link for plan %s", plan["id"])
-            logging.warning("Skipping...")
-            break
+            logging.warning("Skipping plan %s: No link set for plan", plan["id"])
+            continue
 
         match = re.match(GITLAB_URL_REGEX, plan["link"])
         project_path = match.group("project")
@@ -121,18 +121,46 @@ def transfer_points(plans: list[dict], gitlab_token: str) -> None:
             logging.error("Failed to find ID of project %s", project_path)
             continue
 
+        # Get issue information
+        gitlab_response = requests.get(
+            f"https://gitlab.com/api/v4/projects/{project_id}/issues/{issue_iid}",
+            timeout=10,
+            headers=gitlab_headers)
+        payload = gitlab_response.json()
+
+        if not gitlab_response.ok:
+            logging.error("Failed to fetch issue %s#%s", project_path, issue_iid)
+            continue
+
+        if not "weight" in payload:
+            logging.error("No 'weight' for issue in API response. Are you authenticated?")
+            continue
+
+        previous_weight = payload["weight"]
+
+        if previous_weight is not None and overwrite is False:
+            logging.info("Skipping %s#%s: Issue already has a weight set",
+                         project_path, issue_iid)
+            continue
+
         # Set weight
+        points = plan["points"]
         gitlab_response = requests.put(
             f"https://gitlab.com/api/v4/projects/{project_id}/issues/{issue_iid}",
             timeout=10,
             headers=gitlab_headers,
-            json={"weight": plan["points"]})
+            json={"weight": points})
 
         if not gitlab_response.ok:
             logging.error("Failed to set weight for %s#%s", project_path, issue_iid)
 
         else:
-            logging.info("Set weight %s for %s#%s", plan["points"], project_path, issue_iid)
+            if previous_weight is not None:
+                logging.info("Changed weight to %s for %s#%s (was %s)",
+                             points, project_path, issue_iid, previous_weight)
+            else:
+                logging.info("Set weight to %s for %s#%s",
+                             points, project_path, issue_iid)
 
 
 if __name__ == '__main__':
