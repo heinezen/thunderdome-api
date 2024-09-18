@@ -113,6 +113,12 @@ def transfer_points(plans: list[dict], gitlab_token: str, overwrite: bool = Fals
             continue
 
         match = re.match(GITLAB_URL_REGEX, plan["link"])
+        if not match:
+            logging.error(("Skipping plan %s: Invalid URL '%s' does "
+                           "not match GitLab URL pattern '%s'"),
+                          plan["id"], plan["link"], GITLAB_URL_REGEX.pattern)
+            continue
+
         project_path = match.group("project")
         issue_iid = match.group("issue")
 
