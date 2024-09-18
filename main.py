@@ -94,6 +94,19 @@ def transfer_points(plans: list[dict], gitlab_token: str, overwrite: bool = Fals
     }
 
     for plan in plans:
+        points = plan["points"]
+        if not points:
+            logging.warning("Skipping plan %s: No points set for plan", plan["id"])
+            continue
+
+        try:
+            _ = int(points)
+
+        except ValueError:
+            logging.error("Skipping plan %s: Points is not an integer, found '%s' instead",
+                          plan["id"], points)
+            continue
+
         link = plan["link"]
         if not link:
             logging.warning("Skipping plan %s: No link set for plan", plan["id"])
@@ -144,7 +157,6 @@ def transfer_points(plans: list[dict], gitlab_token: str, overwrite: bool = Fals
             continue
 
         # Set weight
-        points = plan["points"]
         gitlab_response = requests.put(
             f"https://gitlab.com/api/v4/projects/{project_id}/issues/{issue_iid}",
             timeout=10,
