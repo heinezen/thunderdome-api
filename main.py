@@ -21,7 +21,7 @@ def parse_args() -> argparse.Namespace:
 
     parser = argparse.ArgumentParser(
         description='Thunderdome API automation script')
-    subparsers = parser.add_subparsers()
+    subparsers = parser.add_subparsers(dest='command', required=True)
 
     fetch_parser = subparsers.add_parser(
         'fetch', help='Fetch battles from the Thunderdome API')
@@ -32,6 +32,48 @@ def parse_args() -> argparse.Namespace:
 
     fetch_parser.add_argument("--overwrite", action="store_true",
                               help="Overwrite existing weights")
+
+    create_parser = subparsers.add_parser(
+        'create', help='Create Thunderdome battles from GitLab items')
+    create_parser.add_argument('api_key', help='API key for the Thunderdome API')
+    create_parser.add_argument('token', help='Token for the GitLab API')
+
+    # Thunderdome battle creation arguments
+    battle_settings = create_parser.add_argument_group('Battle creation arguments')
+    battle_settings.add_argument('--auto-finish', action='store_true',
+                                 help='Automatically finish the battle when everybody voted')
+    battle_settings.add_argument('--leaders', nargs='+', type=str,
+                                 help='User IDs of leaders')
+    battle_settings.add_argument('--scale_id', type=str, help='Estimation scale ID')
+    battle_settings.add_argument('--hide-identities', action='store_true',
+                                 help='Hide identities of participants')
+    battle_settings.add_argument('--join-password', type=str,
+                                 help='Password for joining the battle')
+    battle_settings.add_argument('--leader-password', type=str,
+                                 help='Password for leading the battle')
+    battle_settings.add_argument('--name', type=str, help='Name of the battle in Thunderdome')
+    battle_settings.add_argument('--teamid', type=str, help='Team ID to create battle for')
+    battle_settings.add_argument('--round-type', type=str, choices=('ceil', 'round', 'floor'),
+                                 help='Rounding method for points')
+    battle_settings.add_argument('--allowed_values', nargs='+', type=str,
+                                 help='Allowed values for points')
+
+    # GitLab items
+    gitlab_items = create_parser.add_argument_group('GitLab items to include in the battle')
+    gitlab_items.add_argument("--milestones", nargs="+",
+                              help="Links to milestones to include in the battle")
+    gitlab_items.add_argument("--iteration", nargs="+",
+                              help="Links to iterations to include in the battle")
+    gitlab_items.add_argument("--projects", nargs="+",
+                              help="Links to projects to include in the battle")
+    gitlab_items.add_argument("--epics", nargs="+",
+                              help="Links to epics to include in the battle")
+    gitlab_items.add_argument("--issues", nargs="+",
+                              help="Links to issues to include in the battle")
+
+    create_parser.add_argument("--with-weighted", action="store_true",
+                               help=("Include GitLab items in the battle "
+                                     "that already have a weight set"))
 
     return parser.parse_args()
 
@@ -44,8 +86,12 @@ def main() -> None:
 
     logging.basicConfig(level=logging.INFO)
 
-    plans = get_plans(args.battleid, args.api_key)
-    transfer_points(plans, args.token, args.overwrite)
+    if args.command == "fetch":
+        plans = get_plans(args.battleid, args.api_key)
+        transfer_points(plans, args.token, args.overwrite)
+
+    elif args.command == "create":
+        pass
 
 
 def get_plans(battle_id: str, api_key: str) -> list[dict]:
