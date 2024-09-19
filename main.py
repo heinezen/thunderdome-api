@@ -9,7 +9,7 @@ import logging
 import re
 import requests
 
-GITLAB_URL_REGEX = re.compile(
+GITLAB_ISSUE_URL_REGEX = re.compile(
     r"https:\/\/gitlab\.com\/(?P<orga>[a-zA-Z0-9\-\_]+)\/"
     r"(?P<project>[a-zA-Z0-9\-\_]+)\/-\/issues\/(?P<issue>[0-9]+)")
 
@@ -45,7 +45,7 @@ def parse_args() -> argparse.Namespace:
     battle_settings.add_argument('--leaders', nargs='+', type=str,
                                  help='User IDs of leaders')
     battle_settings.add_argument('--scale_id', type=str, help='Estimation scale ID')
-    battle_settings.add_argument('--hide-identities', action='store_true',
+    battle_settings.add_argument('--hide-identity', action='store_true',
                                  help='Hide identities of participants')
     battle_settings.add_argument('--join-password', type=str,
                                  help='Password for joining the battle')
@@ -87,14 +87,14 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO)
 
     if args.command == "fetch":
-        plans = get_plans(args.battleid, args.api_key)
+        plans = fetch_plans(args.battleid, args.api_key)
         transfer_points(plans, args.token, args.overwrite)
 
     elif args.command == "create":
         pass
 
 
-def get_plans(battle_id: str, api_key: str) -> list[dict]:
+def fetch_plans(battle_id: str, api_key: str) -> list[dict]:
     """
     Get plans from the Thunderdome API.
 
@@ -158,11 +158,11 @@ def transfer_points(plans: list[dict], gitlab_token: str, overwrite: bool = Fals
             logging.warning("Skipping plan %s: No link set for plan", plan["id"])
             continue
 
-        match = re.match(GITLAB_URL_REGEX, plan["link"])
+        match = re.match(GITLAB_ISSUE_URL_REGEX, plan["link"])
         if not match:
             logging.error(("Skipping plan %s: Invalid URL '%s' does "
                            "not match GitLab URL pattern '%s'"),
-                          plan["id"], plan["link"], GITLAB_URL_REGEX.pattern)
+                          plan["id"], plan["link"], GITLAB_ISSUE_URL_REGEX.pattern)
             continue
 
         project_path = match.group("project")
@@ -225,6 +225,170 @@ def transfer_points(plans: list[dict], gitlab_token: str, overwrite: bool = Fals
             else:
                 logging.info("Set weight to %s for %s#%s",
                              points, project_path, issue_iid)
+
+
+def create_game(plans: list[dict], args: argparse.Namespace) -> None:
+    """
+    Create a Thunderdome game.
+
+    :plans: Plans for the battle.
+    :args: Command line arguments.
+    """
+    thunderdome_headers = {
+        'accept': "application/json",
+        "X-API-Key": args.api_key,
+    }
+
+    # Create battle
+    battle_settings = {
+        "autoFinishVoting": args.auto_finish,
+        "leaders": args.leaders,
+        "estimationScaleId": args.scale_id,
+        "hideVoterIdentity": args.hide_identity,
+        "joinCode": args.join_password,
+        "leaderCode": args.leader_password,
+        "name": args.name,
+        "plans": plans,
+        "pointAverageRounding": args.round_type,
+        "pointValuesAllowed": args.allowed_values,
+    }
+
+    thunderdome_response = requests.get(
+        f"https://thunderdome.dev/api/auth/user",
+        timeout=10,
+        headers=thunderdome_headers)
+    payload = thunderdome_response.json()
+    user_id = payload["id"]
+
+    thunderdome_response = requests.post(
+        "https://thunderdome.dev/api/teams/{args.teamid}/users/{user_id}/battles",
+        timeout=10,
+        headers=thunderdome_headers,
+        json=battle_settings)
+
+    if not thunderdome_response.ok:
+        logging.error("Failed to create battle")
+        return
+
+    battle_id = thunderdome_response.json()["data"]["id"]
+
+    # Create plans
+    for plan in plans:
+        plan["battleId"] = battle_id
+
+        thunderdome_response = requests.post("https://thunderdome.dev/api/plans",
+                                             timeout=10,
+                                             headers=thunderdome_headers,
+                                             json=plan)
+
+        if not thunderdome_response.ok:
+            logging.error("Failed to create plan %s", plan["id"])
+
+
+def create_plans(args: argparse.Namespace) -> list[dict]:
+    """
+    Create plans for a battle in the Thunderdome API.
+
+    :param args: Command line arguments.
+    """
+    issues = []
+
+
+def create_plans_from_issues(issue_links: list[str], token: str) -> list[dict]:
+    """
+    Create Thunderdome plans from GitLab issues.
+
+    :param issue_links: GitLab issues to create plans from.
+    :param token: Token for the GitLab API.
+    :return: Plans for the battle.
+    """
+    logging.info("Fetching plans from GitLab...")
+
+    plans: list[dict] = []
+
+    for issue_link in issue_links:
+        issue = get_issue_info(issue_link, token)
+
+        if issue:
+            plan = {
+                "description": issue["description"],
+                "id": issue["id"],
+                "link": issue["web_url"],
+                "name": issue["title"],
+                # "priority": issue["priority"], # TODO: Get priority from labels
+                "referenceId": issue["iid"],
+                "type": "task",
+            }
+            plans.append(plan)
+
+    return issue_links
+
+
+def create_plans_from_milestones():
+    raise NotImplementedError("Milestone support not implemented yet")
+
+
+def create_plans_from_iterations():
+    raise NotImplementedError("Iteration support not implemented yet")
+
+
+def create_plans_from_projects():
+    raise NotImplementedError("Project support not implemented yet")
+
+
+def create_plans_from_epics():
+    raise NotImplementedError("Epic support not implemented yet")
+
+
+def get_issue_info(issue_link: str, token: str) -> dict | None:
+    """
+    Get information about a GitLab issue from the GitLab API.
+
+    :param link: Link to the GitLab issue.
+    :param token: Token for the GitLab API.
+    """
+    gitlab_headers = {
+        "PRIVATE-TOKEN": token,
+    }
+
+    match = re.match(GITLAB_ISSUE_URL_REGEX, issue_link)
+    if not match:
+        logging.error("Invalid URL '%s' does not match GitLab URL pattern '%s'",
+                      issue_link, GITLAB_ISSUE_URL_REGEX.pattern)
+        return None
+
+    project_path = match.group("project")
+    issue_iid = match.group("issue")
+
+    # Get project ID
+    gitlab_response = requests.get(
+        f"https://gitlab.com/api/v4/projects?search={project_path}",
+        timeout=10,
+        headers=gitlab_headers)
+    payload = gitlab_response.json()
+
+    # Find project ID
+    for project in payload:
+        if project["path"] == project_path:
+            project_id = project["id"]
+            logging.debug("Project %s has ID %s", project_path, project_id)
+            break
+
+    else:
+        logging.error("Failed to find ID of project %s", project_path)
+        return None
+
+    # Get issue information
+    gitlab_response = requests.get(
+        f"https://gitlab.com/api/v4/projects/{project_id}/issues/{issue_iid}",
+        timeout=10,
+        headers=gitlab_headers)
+
+    if not gitlab_response.ok:
+        logging.error("Failed to fetch issue %s#%s", project_path, issue_iid)
+        return None
+
+    return gitlab_response.json()
 
 
 if __name__ == '__main__':
