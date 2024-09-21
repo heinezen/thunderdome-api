@@ -51,24 +51,26 @@ def parse_args() -> argparse.Namespace:
                                  help='Password for joining the battle')
     battle_settings.add_argument('--leader-password', type=str,
                                  help='Password for leading the battle')
-    battle_settings.add_argument('--name', type=str, help='Name of the battle in Thunderdome')
+    battle_settings.add_argument('--name', type=str, default="API Game",
+                                 help='Name of the battle in Thunderdome')
     battle_settings.add_argument('--teamid', type=str, help='Team ID to create battle for')
     battle_settings.add_argument('--round-type', type=str, choices=('ceil', 'round', 'floor'),
+                                 default='ceil',
                                  help='Rounding method for points')
-    battle_settings.add_argument('--allowed_values', nargs='+', type=str,
+    battle_settings.add_argument('--allowed-values', nargs='+', type=str, default=[],
                                  help='Allowed values for points')
 
     # GitLab items
     gitlab_items = create_parser.add_argument_group('GitLab items to include in the battle')
-    gitlab_items.add_argument("--milestones", nargs="+",
+    gitlab_items.add_argument("--milestones", nargs="+", default=[],
                               help="Links to milestones to include in the battle")
-    gitlab_items.add_argument("--iteration", nargs="+",
+    gitlab_items.add_argument("--iterations", nargs="+", default=[],
                               help="Links to iterations to include in the battle")
-    gitlab_items.add_argument("--projects", nargs="+",
+    gitlab_items.add_argument("--projects", nargs="+", default=[],
                               help="Links to projects to include in the battle")
-    gitlab_items.add_argument("--epics", nargs="+",
+    gitlab_items.add_argument("--epics", nargs="+", default=[],
                               help="Links to epics to include in the battle")
-    gitlab_items.add_argument("--issues", nargs="+",
+    gitlab_items.add_argument("--issues", nargs="+", default=[],
                               help="Links to issues to include in the battle")
 
     create_parser.add_argument("--with-weighted", action="store_true",
@@ -91,7 +93,8 @@ def main() -> None:
         transfer_points(plans, args.token, args.overwrite)
 
     elif args.command == "create":
-        pass
+        plans = create_plans(args)
+        create_game(plans, args)
 
 
 def fetch_plans(battle_id: str, api_key: str) -> list[dict]:
@@ -239,50 +242,58 @@ def create_game(plans: list[dict], args: argparse.Namespace) -> None:
         "X-API-Key": args.api_key,
     }
 
+    thunderdome_response = requests.get(
+        f"https://thunderdome.dev/api/auth/user",
+        timeout=10,
+        headers=thunderdome_headers)
+    payload = thunderdome_response.json()
+    user_id = payload["data"]["id"]
+
     # Create battle
-    battle_settings = {
-        "autoFinishVoting": args.auto_finish,
-        "leaders": args.leaders,
-        "estimationScaleId": args.scale_id,
-        "hideVoterIdentity": args.hide_identity,
-        "joinCode": args.join_password,
-        "leaderCode": args.leader_password,
+
+    # query parameters
+    battle_settings_query = {
+        "userId": user_id,
+        "teamId": args.teamid,
+    }
+
+    # mandatory body parameters
+    battle_settings_body = {
         "name": args.name,
         "plans": plans,
         "pointAverageRounding": args.round_type,
         "pointValuesAllowed": args.allowed_values,
     }
 
-    thunderdome_response = requests.get(
-        f"https://thunderdome.dev/api/auth/user",
-        timeout=10,
-        headers=thunderdome_headers)
-    payload = thunderdome_response.json()
-    user_id = payload["id"]
+    # optional body parameters
+    if args.auto_finish is not None:
+        battle_settings_body["autoFinishVoting"] = args.auto_finish
+
+    if args.leaders is not None:
+        battle_settings_body["leaders"] = args.leaders
+
+    if args.scale_id is not None:
+        battle_settings_body["estimationScaleId"] = args.scale_id
+
+    if args.hide_identity is not None:
+        battle_settings_body["hideVoterIdentity"] = args.hide_identity
+
+    if args.join_password is not None:
+        battle_settings_body["joinCode"] = args.join_password
+
+    if args.leader_password is not None:
+        battle_settings_body["leaderCode"] = args.leader_password
 
     thunderdome_response = requests.post(
-        "https://thunderdome.dev/api/teams/{args.teamid}/users/{user_id}/battles",
+        f"https://thunderdome.dev/api/teams/{args.teamid}/users/{user_id}/battles",
         timeout=10,
         headers=thunderdome_headers,
-        json=battle_settings)
+        params=battle_settings_query,
+        json=battle_settings_body)
 
     if not thunderdome_response.ok:
         logging.error("Failed to create battle")
-        return
-
-    battle_id = thunderdome_response.json()["data"]["id"]
-
-    # Create plans
-    for plan in plans:
-        plan["battleId"] = battle_id
-
-        thunderdome_response = requests.post("https://thunderdome.dev/api/plans",
-                                             timeout=10,
-                                             headers=thunderdome_headers,
-                                             json=plan)
-
-        if not thunderdome_response.ok:
-            logging.error("Failed to create plan %s", plan["id"])
+        logging.error(thunderdome_response.json())
 
 
 def create_plans(args: argparse.Namespace) -> list[dict]:
@@ -291,14 +302,31 @@ def create_plans(args: argparse.Namespace) -> list[dict]:
 
     :param args: Command line arguments.
     """
-    issues = []
+    plans = []
+
+    if args.issues:
+        plans.extend(create_plans_from_issues(args.issues, args.token))
+
+    if args.milestones:
+        plans.extend(create_plans_from_milestones(args.milestones, args.token))
+
+    if args.iterations:
+        plans.extend(create_plans_from_iterations(args.iterations, args.token))
+
+    if args.projects:
+        plans.extend(create_plans_from_projects(args.projects, args.token))
+
+    if args.epics:
+        plans.extend(create_plans_from_epics(args.epics, args.token))
+
+    return plans
 
 
-def create_plans_from_issues(issue_links: list[str], token: str) -> list[dict]:
+def create_plans_from_issues(links: list[str], token: str) -> list[dict]:
     """
     Create Thunderdome plans from GitLab issues.
 
-    :param issue_links: GitLab issues to create plans from.
+    :param links: GitLab issues to create plans from.
     :param token: Token for the GitLab API.
     :return: Plans for the battle.
     """
@@ -306,37 +334,37 @@ def create_plans_from_issues(issue_links: list[str], token: str) -> list[dict]:
 
     plans: list[dict] = []
 
-    for issue_link in issue_links:
+    for issue_link in links:
         issue = get_issue_info(issue_link, token)
 
         if issue:
             plan = {
                 "description": issue["description"],
-                "id": issue["id"],
+                "id": str(issue["id"]),
                 "link": issue["web_url"],
                 "name": issue["title"],
                 # "priority": issue["priority"], # TODO: Get priority from labels
-                "referenceId": issue["iid"],
-                "type": "task",
+                "referenceId": str(issue["iid"]),
+                "type": "Task",
             }
             plans.append(plan)
 
-    return issue_links
+    return plans
 
 
-def create_plans_from_milestones():
+def create_plans_from_milestones(links: list[str], token: str) -> list[dict]:
     raise NotImplementedError("Milestone support not implemented yet")
 
 
-def create_plans_from_iterations():
+def create_plans_from_iterations(links: list[str], token: str) -> list[dict]:
     raise NotImplementedError("Iteration support not implemented yet")
 
 
-def create_plans_from_projects():
+def create_plans_from_projects(links: list[str], token: str) -> list[dict]:
     raise NotImplementedError("Project support not implemented yet")
 
 
-def create_plans_from_epics():
+def create_plans_from_epics(links: list[str], token: str) -> list[dict]:
     raise NotImplementedError("Epic support not implemented yet")
 
 
