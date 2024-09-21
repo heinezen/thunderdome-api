@@ -18,7 +18,7 @@ GITLAB_PROJECT_MILESTONE_REGEX = re.compile(
     r"(?P<project>[a-zA-Z0-9\-\_]+)\/-\/milestones\/(?P<milestone>[0-9]+)"
 )
 GITLAB_ITERATION_REGEX = re.compile(
-    r"https:\/\/gitlab\.com\/(?P<orga>[a-zA-Z0-9\-\_]+)\/-\/"
+    r"https:\/\/gitlab\.com\/groups/(?P<orga>[a-zA-Z0-9\-\_]+)\/-\/"
     r"cadences\/(?P<cadence>[0-9]+)\/iterations\/(?P<iteration>[0-9]+)"
 )
 GITLAB_PROJECT_URL_REGEX = re.compile(
@@ -457,7 +457,48 @@ def create_plans_from_milestones(links: list[str], token: str) -> list[dict]:
 
 
 def create_plans_from_iterations(links: list[str], token: str) -> list[dict]:
-    raise NotImplementedError("Iteration support not implemented yet")
+    """
+    Create Thunderdome plans from GitLab iterations.
+
+    :param links: GitLab iterations to create plans from.
+    :param token: Token for the GitLab API.
+    """
+    logging.info("Fetching iterations from GitLab...")
+
+    gitlab_headers = {
+        "PRIVATE-TOKEN": token,
+    }
+
+    plans: list[dict] = []
+    for link in links:
+        match = re.match(GITLAB_ITERATION_REGEX, link)
+        if not match:
+            logging.error("Invalid URL '%s' does not match GitLab URL pattern '%s'",
+                          link, GITLAB_ITERATION_REGEX.pattern)
+            continue
+
+        iteration_id = match.group("iteration")
+
+        # get issues in iteration
+        gitlab_response = requests.get(
+            f"https://gitlab.com/api/v4/issues",
+            timeout=10,
+            params={"iteration_id": iteration_id},
+            headers=gitlab_headers
+        )
+
+        if not gitlab_response.ok:
+            logging.error("Failed to fetch issues in iteration %s", iteration_id)
+            continue
+
+        payload = gitlab_response.json()
+        issue_links = []
+        for issue in payload:
+            issue_links.append(issue["web_url"])
+
+        plans = create_plans_from_issues(issue_links, token)
+
+    return plans
 
 
 def create_plans_from_projects(links: list[str], token: str) -> list[dict]:
