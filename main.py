@@ -502,7 +502,62 @@ def create_plans_from_iterations(links: list[str], token: str) -> list[dict]:
 
 
 def create_plans_from_projects(links: list[str], token: str) -> list[dict]:
-    raise NotImplementedError("Project support not implemented yet")
+    """
+    Create Thunderdome plans from GitLab projects.
+
+    :param links: GitLab projects to create plans from.
+    :param token: Token for the GitLab API.
+    """
+    logging.info("Fetching projects from GitLab...")
+
+    gitlab_headers = {
+        "PRIVATE-TOKEN": token,
+    }
+
+    plans: list[dict] = []
+    for link in links:
+        match = re.match(GITLAB_PROJECT_URL_REGEX, link)
+        if not match:
+            logging.error("Invalid URL '%s' does not match GitLab URL pattern '%s'",
+                          link, GITLAB_PROJECT_URL_REGEX.pattern)
+            continue
+
+        project_path = match.group("project")
+
+        # get project ID
+        gitlab_response = requests.get(
+            "https://gitlab.com/api/v4/projects",
+            timeout=10,
+            params={"search": project_path},
+            headers=gitlab_headers
+        )
+
+        if not gitlab_response.ok:
+            logging.error("Failed to fetch project %s", project_path)
+            continue
+
+        payload = gitlab_response.json()
+        project_id = payload[0]["id"]
+
+        # get issues in project
+        gitlab_response = requests.get(
+            f"https://gitlab.com/api/v4/projects/{project_id}/issues",
+            timeout=10,
+            headers=gitlab_headers
+        )
+
+        if not gitlab_response.ok:
+            logging.error("Failed to fetch issues in project %s", project_path)
+            continue
+
+        payload = gitlab_response.json()
+        issue_links = []
+        for issue in payload:
+            issue_links.append(issue["web_url"])
+
+        plans = create_plans_from_issues(issue_links, token)
+
+    return plans
 
 
 def create_plans_from_epics(links: list[str], token: str) -> list[dict]:
