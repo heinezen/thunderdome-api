@@ -9,9 +9,26 @@ import logging
 import re
 import requests
 
+GITLAB_ORGA_MILESTONE_REGEX = re.compile(
+    r"https:\/\/gitlab\.com\/groups/(?P<orga>[a-zA-Z0-9\-\_]+)\/-\/"
+    r"milestones\/(?P<milestone>[0-9]+)"
+)
+GITLAB_PROJECT_MILESTONE_REGEX = re.compile(
+    r"https:\/\/gitlab\.com\/(?P<orga>[a-zA-Z0-9\-\_]+)\/"
+    r"(?P<project>[a-zA-Z0-9\-\_]+)\/-\/milestones\/(?P<milestone>[0-9]+)"
+)
+GITLAB_ITERATION_REGEX = re.compile(
+    r"https:\/\/gitlab\.com\/(?P<orga>[a-zA-Z0-9\-\_]+)\/-\/"
+    r"cadences\/(?P<cadence>[0-9]+)\/iterations\/(?P<iteration>[0-9]+)"
+)
+GITLAB_PROJECT_URL_REGEX = re.compile(
+    r"https:\/\/gitlab\.com\/(?P<orga>[a-zA-Z0-9\-\_]+)\/"
+    r"(?P<project>[a-zA-Z0-9\-\_]+)"
+)
 GITLAB_ISSUE_URL_REGEX = re.compile(
     r"https:\/\/gitlab\.com\/(?P<orga>[a-zA-Z0-9\-\_]+)\/"
-    r"(?P<project>[a-zA-Z0-9\-\_]+)\/-\/issues\/(?P<issue>[0-9]+)")
+    r"(?P<project>[a-zA-Z0-9\-\_]+)\/-\/issues\/(?P<issue>[0-9]+)"
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -173,8 +190,9 @@ def transfer_points(plans: list[dict], gitlab_token: str, overwrite: bool = Fals
 
         # Get project ID
         gitlab_response = requests.get(
-            f"https://gitlab.com/api/v4/projects?search={project_path}",
+            f"https://gitlab.com/api/v4/projects",
             timeout=10,
+            params={"search": project_path},
             headers=gitlab_headers)
         payload = gitlab_response.json()
 
@@ -330,7 +348,7 @@ def create_plans_from_issues(links: list[str], token: str) -> list[dict]:
     :param token: Token for the GitLab API.
     :return: Plans for the battle.
     """
-    logging.info("Fetching plans from GitLab...")
+    logging.info("Fetching issues from GitLab...")
 
     plans: list[dict] = []
 
@@ -353,7 +371,89 @@ def create_plans_from_issues(links: list[str], token: str) -> list[dict]:
 
 
 def create_plans_from_milestones(links: list[str], token: str) -> list[dict]:
-    raise NotImplementedError("Milestone support not implemented yet")
+    """
+    Create Thunderdome plans from GitLab milestones.
+
+    :param links: GitLab milestones to create plans from.
+    :param token: Token for the GitLab API.
+    """
+    logging.info("Fetching milestones from GitLab...")
+
+    gitlab_headers = {
+        "PRIVATE-TOKEN": token,
+    }
+
+    plans: list[dict] = []
+    for link in links:
+        # check if the link is a group milestone
+        match = re.match(GITLAB_ORGA_MILESTONE_REGEX, link)
+        if not match:
+            logging.error(
+                "Invalid URL '%s' does not match GitLab URL pattern '%s'",
+                link, GITLAB_ORGA_MILESTONE_REGEX.pattern)
+            continue
+
+        group_name = match.group("orga")
+
+        # get group ID
+        gitlab_response = requests.get(
+            "https://gitlab.com/api/v4/groups",
+            timeout=10,
+            params={"search": group_name},
+            headers=gitlab_headers
+        )
+
+        if not gitlab_response.ok:
+            logging.error("Failed to fetch group %s", group_name)
+            continue
+
+        payload = gitlab_response.json()
+        for group in payload:
+            if group["name"] == group_name:
+                group_id = group["id"]
+                logging.debug("Group %s has ID %s", group_name, group_id)
+                break
+
+        else:
+            logging.error("Failed to find ID of group %s", group_name)
+            continue
+
+        # get milestone ID
+        milestone_iid = match.group("milestone")
+        gitlab_response = requests.get(
+            f"https://gitlab.com/api/v4/groups/{group_id}/milestones",
+            timeout=10,
+            params={"iids": [milestone_iid]},
+            headers=gitlab_headers
+        )
+
+        if not gitlab_response.ok:
+            logging.error("Failed to fetch milestone %s", milestone_iid)
+            continue
+
+        payload = gitlab_response.json()
+        milestone_name = payload[0]["title"]
+
+        # get issues in milestone
+        gitlab_response = requests.get(
+            f"https://gitlab.com/api/v4/issues",
+            timeout=10,
+            params={"milestone": milestone_name},
+            headers=gitlab_headers
+        )
+
+        if not gitlab_response.ok:
+            logging.error("Failed to fetch issues in milestone %s", milestone_name)
+            continue
+
+        payload = gitlab_response.json()
+        issue_links = []
+        for issue in payload:
+            issue_links.append(issue["web_url"])
+
+        plans = create_plans_from_issues(issue_links, token)
+
+    return plans
 
 
 def create_plans_from_iterations(links: list[str], token: str) -> list[dict]:
@@ -390,8 +490,9 @@ def get_issue_info(issue_link: str, token: str) -> dict | None:
 
     # Get project ID
     gitlab_response = requests.get(
-        f"https://gitlab.com/api/v4/projects?search={project_path}",
+        "https://gitlab.com/api/v4/projects",
         timeout=10,
+        params={"search": project_path},
         headers=gitlab_headers)
     payload = gitlab_response.json()
 
