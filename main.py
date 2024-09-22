@@ -194,7 +194,7 @@ def transfer_points(plans: list[dict], gitlab_token: str, overwrite: bool = Fals
 
         # Get project ID
         gitlab_response = requests.get(
-            f"https://gitlab.com/api/v4/projects",
+            "https://gitlab.com/api/v4/projects",
             timeout=10,
             params={"search": project_path},
             headers=gitlab_headers)
@@ -265,7 +265,7 @@ def create_game(plans: list[dict], args: argparse.Namespace) -> None:
     }
 
     thunderdome_response = requests.get(
-        f"https://thunderdome.dev/api/auth/user",
+        "https://thunderdome.dev/api/auth/user",
         timeout=10,
         headers=thunderdome_headers)
     payload = thunderdome_response.json()
@@ -324,27 +324,33 @@ def create_plans(args: argparse.Namespace) -> list[dict]:
 
     :param args: Command line arguments.
     """
-    plans = []
-
-    if args.issues:
-        plans.extend(create_plans_from_issues(args.issues, args.token))
+    issues: dict[int, str] = {}
 
     if args.milestones:
-        plans.extend(create_plans_from_milestones(args.milestones, args.token))
+        issues.update(get_issues_from_milestones(args.milestones, args.token))
 
     if args.iterations:
-        plans.extend(create_plans_from_iterations(args.iterations, args.token))
+        issues.update(get_issues_from_iterations(args.iterations, args.token))
 
     if args.projects:
-        plans.extend(create_plans_from_projects(args.projects, args.token))
+        issues.update(get_issues_from_projects(args.projects, args.token))
 
     if args.epics:
-        plans.extend(create_plans_from_epics(args.epics, args.token))
+        issues.update(get_issues_from_epics(args.epics, args.token))
+
+    if args.issues:
+        for issue in args.issues:
+            info = get_issue_info(issue, args.token)
+            issues.update({info["id"]: info["web_url"]})
+
+    logging.info("Found %d unique issues", len(issues))
+
+    plans = create_plans_from_issues(issues, args.token)
 
     return plans
 
 
-def create_plans_from_issues(links: list[str], token: str) -> list[dict]:
+def create_plans_from_issues(links: dict[int, str], token: str) -> list[dict]:
     """
     Create Thunderdome plans from GitLab issues.
 
@@ -355,8 +361,7 @@ def create_plans_from_issues(links: list[str], token: str) -> list[dict]:
     logging.info("Fetching issues from GitLab...")
 
     plans: list[dict] = []
-
-    for issue_link in links:
+    for issue_link in links.values():
         issue = get_issue_info(issue_link, token)
 
         if issue:
@@ -374,9 +379,9 @@ def create_plans_from_issues(links: list[str], token: str) -> list[dict]:
     return plans
 
 
-def create_plans_from_milestones(links: list[str], token: str) -> list[dict]:
+def get_issues_from_milestones(links: list[str], token: str) -> dict[int, str]:
     """
-    Create Thunderdome plans from GitLab milestones.
+    Get issues from GitLab milestones.
 
     :param links: GitLab milestones to create plans from.
     :param token: Token for the GitLab API.
@@ -387,7 +392,7 @@ def create_plans_from_milestones(links: list[str], token: str) -> list[dict]:
         "PRIVATE-TOKEN": token,
     }
 
-    plans: list[dict] = []
+    issues: dict[int, str] = {}
     for link in links:
         # check if the link is a group milestone
         match = re.match(GITLAB_ORGA_MILESTONE_REGEX, link)
@@ -440,7 +445,7 @@ def create_plans_from_milestones(links: list[str], token: str) -> list[dict]:
 
         # get issues in milestone
         gitlab_response = requests.get(
-            f"https://gitlab.com/api/v4/issues",
+            "https://gitlab.com/api/v4/issues",
             timeout=10,
             params={"milestone": milestone_name},
             headers=gitlab_headers
@@ -451,16 +456,13 @@ def create_plans_from_milestones(links: list[str], token: str) -> list[dict]:
             continue
 
         payload = gitlab_response.json()
-        issue_links = []
         for issue in payload:
-            issue_links.append(issue["web_url"])
+            issues.update({issue["id"]: issue["web_url"]})
 
-        plans = create_plans_from_issues(issue_links, token)
-
-    return plans
+    return issues
 
 
-def create_plans_from_iterations(links: list[str], token: str) -> list[dict]:
+def get_issues_from_iterations(links: list[str], token: str) -> dict[int, str]:
     """
     Create Thunderdome plans from GitLab iterations.
 
@@ -473,7 +475,7 @@ def create_plans_from_iterations(links: list[str], token: str) -> list[dict]:
         "PRIVATE-TOKEN": token,
     }
 
-    plans: list[dict] = []
+    issues: dict[int, str] = {}
     for link in links:
         match = re.match(GITLAB_ITERATION_REGEX, link)
         if not match:
@@ -485,7 +487,7 @@ def create_plans_from_iterations(links: list[str], token: str) -> list[dict]:
 
         # get issues in iteration
         gitlab_response = requests.get(
-            f"https://gitlab.com/api/v4/issues",
+            "https://gitlab.com/api/v4/issues",
             timeout=10,
             params={"iteration_id": iteration_id},
             headers=gitlab_headers
@@ -496,16 +498,13 @@ def create_plans_from_iterations(links: list[str], token: str) -> list[dict]:
             continue
 
         payload = gitlab_response.json()
-        issue_links = []
         for issue in payload:
-            issue_links.append(issue["web_url"])
+            issues.update({issue["id"]: issue["web_url"]})
 
-        plans = create_plans_from_issues(issue_links, token)
-
-    return plans
+    return issues
 
 
-def create_plans_from_projects(links: list[str], token: str) -> list[dict]:
+def get_issues_from_projects(links: list[str], token: str) -> dict[int, str]:
     """
     Create Thunderdome plans from GitLab projects.
 
@@ -518,7 +517,7 @@ def create_plans_from_projects(links: list[str], token: str) -> list[dict]:
         "PRIVATE-TOKEN": token,
     }
 
-    plans: list[dict] = []
+    issues: dict[int, str] = {}
     for link in links:
         match = re.match(GITLAB_PROJECT_URL_REGEX, link)
         if not match:
@@ -555,16 +554,13 @@ def create_plans_from_projects(links: list[str], token: str) -> list[dict]:
             continue
 
         payload = gitlab_response.json()
-        issue_links = []
         for issue in payload:
-            issue_links.append(issue["web_url"])
+            issues.update({issue["id"]: issue["web_url"]})
 
-        plans = create_plans_from_issues(issue_links, token)
-
-    return plans
+    return issues
 
 
-def create_plans_from_epics(links: list[str], token: str) -> list[dict]:
+def get_issues_from_epics(links: list[str], token: str) -> dict[int, str]:
     """
     Create Thunderdome plans from GitLab epics.
 
@@ -577,7 +573,7 @@ def create_plans_from_epics(links: list[str], token: str) -> list[dict]:
         "PRIVATE-TOKEN": token,
     }
 
-    plans: list[dict] = []
+    issues: dict[int, str] = {}
     for link in links:
         match = re.match(GITLAB_EPIC_URL_REGEX, link)
         if not match:
@@ -623,13 +619,10 @@ def create_plans_from_epics(links: list[str], token: str) -> list[dict]:
             continue
 
         payload = gitlab_response.json()
-        issue_links = []
         for issue in payload:
-            issue_links.append(issue["web_url"])
+            issues.update({issue["id"]: issue["web_url"]})
 
-        plans = create_plans_from_issues(issue_links, token)
-
-    return plans
+    return issues
 
 
 def get_issue_info(issue_link: str, token: str) -> dict | None:
