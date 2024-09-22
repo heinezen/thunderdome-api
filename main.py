@@ -21,6 +21,10 @@ GITLAB_ITERATION_REGEX = re.compile(
     r"https:\/\/gitlab\.com\/groups/(?P<orga>[a-zA-Z0-9\-\_]+)\/-\/"
     r"cadences\/(?P<cadence>[0-9]+)\/iterations\/(?P<iteration>[0-9]+)"
 )
+GITLAB_EPIC_URL_REGEX = re.compile(
+    r"https:\/\/gitlab\.com\/groups\/(?P<orga>[a-zA-Z0-9\-\_]+)\/-\/"
+    r"epics\/(?P<epic>[0-9]+)"
+)
 GITLAB_PROJECT_URL_REGEX = re.compile(
     r"https:\/\/gitlab\.com\/(?P<orga>[a-zA-Z0-9\-\_]+)\/"
     r"(?P<project>[a-zA-Z0-9\-\_]+)"
@@ -561,7 +565,71 @@ def create_plans_from_projects(links: list[str], token: str) -> list[dict]:
 
 
 def create_plans_from_epics(links: list[str], token: str) -> list[dict]:
-    raise NotImplementedError("Epic support not implemented yet")
+    """
+    Create Thunderdome plans from GitLab epics.
+
+    :param links: GitLab epics to create plans from.
+    :param token: Token for the GitLab API.
+    """
+    logging.info("Fetching epics from GitLab...")
+
+    gitlab_headers = {
+        "PRIVATE-TOKEN": token,
+    }
+
+    plans: list[dict] = []
+    for link in links:
+        match = re.match(GITLAB_EPIC_URL_REGEX, link)
+        if not match:
+            logging.error("Invalid URL '%s' does not match GitLab URL pattern '%s'",
+                          link, GITLAB_EPIC_URL_REGEX.pattern)
+            continue
+
+        group_name = match.group("orga")
+        epic_iid = match.group("epic")
+
+        # get group ID
+        gitlab_response = requests.get(
+            "https://gitlab.com/api/v4/groups",
+            timeout=10,
+            params={"search": group_name},
+            headers=gitlab_headers
+        )
+
+        if not gitlab_response.ok:
+            logging.error("Failed to fetch group %s", group_name)
+            continue
+
+        payload = gitlab_response.json()
+        for group in payload:
+            if group["name"] == group_name:
+                group_id = group["id"]
+                logging.debug("Group %s has ID %s", group_name, group_id)
+                break
+
+        else:
+            logging.error("Failed to find ID of group %s", group_name)
+            continue
+
+        # get issues in epic
+        gitlab_response = requests.get(
+            f"https://gitlab.com/api/v4/groups/{group_id}/epics/{epic_iid}/issues",
+            timeout=10,
+            headers=gitlab_headers
+        )
+
+        if not gitlab_response.ok:
+            logging.error("Failed to fetch issues in epic %s", epic_iid)
+            continue
+
+        payload = gitlab_response.json()
+        issue_links = []
+        for issue in payload:
+            issue_links.append(issue["web_url"])
+
+        plans = create_plans_from_issues(issue_links, token)
+
+    return plans
 
 
 def get_issue_info(issue_link: str, token: str) -> dict | None:
