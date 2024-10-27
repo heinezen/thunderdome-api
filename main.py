@@ -193,23 +193,7 @@ def transfer_points(plans: list[dict], gitlab_token: str, overwrite: bool = Fals
         issue_iid = match.group("issue")
 
         # Get project ID
-        gitlab_response = requests.get(
-            "https://gitlab.com/api/v4/projects",
-            timeout=10,
-            params={"search": project_path},
-            headers=gitlab_headers)
-        payload = gitlab_response.json()
-
-        # Find project ID
-        for project in payload:
-            if project["path"] == project_path:
-                project_id = project["id"]
-                logging.debug("Project %s has ID %s", project_path, project_id)
-                break
-
-        else:
-            logging.error("Failed to find ID of project %s", project_path)
-            continue
+        project_id = get_project_id(link, gitlab_token)
 
         # Get issue information
         gitlab_response = requests.get(
@@ -405,27 +389,7 @@ def get_issues_from_milestones(links: list[str], token: str) -> dict[int, str]:
         group_name = match.group("orga")
 
         # get group ID
-        gitlab_response = requests.get(
-            "https://gitlab.com/api/v4/groups",
-            timeout=10,
-            params={"search": group_name},
-            headers=gitlab_headers
-        )
-
-        if not gitlab_response.ok:
-            logging.error("Failed to fetch group %s", group_name)
-            continue
-
-        payload = gitlab_response.json()
-        for group in payload:
-            if group["name"] == group_name:
-                group_id = group["id"]
-                logging.debug("Group %s has ID %s", group_name, group_id)
-                break
-
-        else:
-            logging.error("Failed to find ID of group %s", group_name)
-            continue
+        group_id = get_group_id(group_name, token)
 
         # get milestone ID
         milestone_iid = match.group("milestone")
@@ -528,19 +492,7 @@ def get_issues_from_projects(links: list[str], token: str) -> dict[int, str]:
         project_path = match.group("project")
 
         # get project ID
-        gitlab_response = requests.get(
-            "https://gitlab.com/api/v4/projects",
-            timeout=10,
-            params={"search": project_path},
-            headers=gitlab_headers
-        )
-
-        if not gitlab_response.ok:
-            logging.error("Failed to fetch project %s", project_path)
-            continue
-
-        payload = gitlab_response.json()
-        project_id = payload[0]["id"]
+        project_id = get_project_id(link, token)
 
         # get issues in project
         gitlab_response = requests.get(
@@ -675,6 +627,80 @@ def get_issue_info(issue_link: str, token: str) -> dict | None:
         return None
 
     return gitlab_response.json()
+
+
+def get_group_id(group_name: str, token: str) -> int | None:
+    """
+    Get the ID of a GitLab group.
+
+    :param group_name: Name of the GitLab group.
+    :param token: Token for the GitLab API.
+    """
+    gitlab_headers = {
+        "PRIVATE-TOKEN": token,
+    }
+
+    # Get group ID
+    gitlab_response = requests.get(
+        "https://gitlab.com/api/v4/groups",
+        timeout=10,
+        params={"search": group_name},
+        headers=gitlab_headers)
+
+    if not gitlab_response.ok:
+        logging.error("Failed to fetch group %s", group_name)
+        return None
+
+    payload = gitlab_response.json()
+    for group in payload:
+        if group["name"] == group_name:
+            group_id = group["id"]
+            logging.debug("Group %s has ID %s", group_name, group_id)
+            return group_id
+
+    logging.error("Failed to find ID of group %s", group_name)
+    return None
+
+
+def get_project_id(issue_link: str, token: str) -> int | None:
+    """
+    Get the ID of a GitLab project from a GitLab issue.
+
+    :param issue_link: Link to the GitLab issue.
+    :param token: Token for the GitLab API.
+    """
+    gitlab_headers = {
+        "PRIVATE-TOKEN": token,
+    }
+
+    match = re.match(GITLAB_ISSUE_URL_REGEX, issue_link)
+    if not match:
+        logging.error("Invalid URL '%s' does not match GitLab URL pattern '%s'",
+                      issue_link, GITLAB_ISSUE_URL_REGEX.pattern)
+        return None
+
+    group_name = match.group("orga")
+    group_id = get_group_id(group_name, token)
+
+    project_path = match.group("project")
+
+    # Get project ID
+    gitlab_response = requests.get(
+        f"https://gitlab.com/api/v4/groups/{group_id}/projects",
+        timeout=10,
+        params={"scope": "projects", "search": project_path},
+        headers=gitlab_headers)
+    payload = gitlab_response.json()
+
+    # Find project ID
+    for project in payload:
+        if project["path"] == project_path:
+            project_id = project["id"]
+            logging.debug("Project %s has ID %s", project_path, project_id)
+            return project_id
+
+    logging.error("Failed to find ID of project %s", project_path)
+    return None
 
 
 if __name__ == '__main__':
