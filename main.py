@@ -8,6 +8,7 @@ import argparse
 import logging
 import re
 import requests
+import typing
 
 GITLAB_ORGA_MILESTONE_REGEX = re.compile(
     r"https:\/\/gitlab\.com\/groups/(?P<orga>[a-zA-Z0-9\-\_]+)\/-\/"
@@ -33,6 +34,9 @@ GITLAB_ISSUE_URL_REGEX = re.compile(
     r"https:\/\/gitlab\.com\/(?P<orga>[a-zA-Z0-9\-\_]+)\/(?:(?P<subgroup>[a-zA-Z0-9\-\_]+)\/)*"
     r"(?P<project>[a-zA-Z0-9\-\_]+)\/-\/issues\/(?P<issue>[0-9]+)"
 )
+
+# Maximum number of issues to fetch per request
+GITLAB_PAGINATION_LIMIT = 100
 
 
 def parse_args() -> argparse.Namespace:
@@ -409,45 +413,12 @@ def get_issues_from_milestones(links: list[str], token: str) -> dict[int, str]:
         payload = gitlab_response.json()
         milestone_name = payload[0]["title"]
 
-        def paginate_issues(next_url = None) -> requests.Response:
-            """
-            Get issues in a GitLab milestone.
-
-            :param next_url: URL to paginate through issues.
-                             If None, the initial request is created instead.
-            :return: Issues in the milestone.
-            """
-            if next_url:
-                gitlab_response = requests.get(
-                    next_url,
-                    timeout=10,
-                    headers=gitlab_headers
-                )
-
-            else:
-                gitlab_response = requests.get(
-                    "https://gitlab.com/api/v4/issues",
-                    timeout=10,
-                    params={"milestone": milestone_name, "per_page": 100},
-                    headers=gitlab_headers
-                )
-
-            if not gitlab_response.ok:
-                logging.error("Failed to fetch issues in milestone %s", milestone_name)
-                continue
-
-            return gitlab_response
-
-        gitlab_response = paginate_issues()
-
-        payload = gitlab_response.json()
-        for issue in payload:
-            issues.update({issue["id"]: issue["web_url"]})
-
-        # Paginate through issues
-        while "next" in gitlab_response.links:
-            gitlab_response = paginate_issues(gitlab_response.links["next"]["url"])
-            payload = gitlab_response.json()
+        for res in paginate_request(
+            "https://gitlab.com/api/v4/issues",
+            {"milestone": milestone_name, "per_page": GITLAB_PAGINATION_LIMIT},
+            gitlab_headers
+        ):
+            payload = res.json()
             for issue in payload:
                 issues.update({issue["id"]: issue["web_url"]})
 
@@ -477,45 +448,12 @@ def get_issues_from_iterations(links: list[str], token: str) -> dict[int, str]:
 
         iteration_id = match.group("iteration")
 
-        def paginate_issues(next_url = None) -> requests.Response:
-            """
-            Get issues in a GitLab iteration.
-
-            :param next_url: URL to paginate through issues.
-                             If None, the initial request is created instead.
-            :return: Issues in the iteration.
-            """
-            if next_url:
-                gitlab_response = requests.get(
-                    next_url,
-                    timeout=10,
-                    headers=gitlab_headers
-                )
-
-            else:
-                gitlab_response = requests.get(
-                    "https://gitlab.com/api/v4/issues",
-                    timeout=10,
-                    params={"iteration_id": iteration_id, "per_page": 100},
-                    headers=gitlab_headers
-                )
-
-            if not gitlab_response.ok:
-                logging.error("Failed to fetch issues in iteration %s", iteration_id)
-                continue
-
-            return gitlab_response
-
-        # get issues in iteration
-        gitlab_response = paginate_issues()
-        payload = gitlab_response.json()
-        for issue in payload:
-            issues.update({issue["id"]: issue["web_url"]})
-
-        # Paginate through issues
-        while "next" in gitlab_response.links:
-            gitlab_response = paginate_issues(gitlab_response.links["next"]["url"])
-            payload = gitlab_response.json()
+        for res in paginate_request(
+            "https://gitlab.com/api/v4/issues",
+            {"iteration_id": iteration_id, "per_page": GITLAB_PAGINATION_LIMIT},
+            gitlab_headers
+        ):
+            payload = res.json()
             for issue in payload:
                 issues.update({issue["id"]: issue["web_url"]})
 
@@ -543,50 +481,15 @@ def get_issues_from_projects(links: list[str], token: str) -> dict[int, str]:
                           link, GITLAB_PROJECT_URL_REGEX.pattern)
             continue
 
-        project_path = match.group("project")
-
         # get project ID
         project_id = get_project_id(link, token)
 
-        def paginate_issues(next_url = None) -> requests.Response:
-            """
-            Get issues in a GitLab project.
-
-            :param next_url: URL to paginate through issues.
-                             If None, the initial request is created instead.
-            :return: Issues in the project.
-            """
-            if next_url:
-                gitlab_response = requests.get(
-                    next_url,
-                    timeout=10,
-                    headers=gitlab_headers
-                )
-
-            else:
-                gitlab_response = requests.get(
-                    f"https://gitlab.com/api/v4/projects/{project_id}/issues",
-                    timeout=10,
-                    params={"per_page": 100},
-                    headers=gitlab_headers
-                )
-
-            if not gitlab_response.ok:
-                logging.error("Failed to fetch issues in project %s", project_path)
-                continue
-
-            return gitlab_response
-
-        # get issues in project
-        gitlab_response = paginate_issues()
-        payload = gitlab_response.json()
-        for issue in payload:
-            issues.update({issue["id"]: issue["web_url"]})
-
-        # Paginate through issues
-        while "next" in gitlab_response.links:
-            gitlab_response = paginate_issues(gitlab_response.links["next"]["url"])
-            payload = gitlab_response.json()
+        for res in paginate_request(
+            f"https://gitlab.com/api/v4/projects/{project_id}/issues",
+            {"per_page": GITLAB_PAGINATION_LIMIT},
+            gitlab_headers
+        ):
+            payload = res.json()
             for issue in payload:
                 issues.update({issue["id"]: issue["web_url"]})
 
@@ -618,67 +521,14 @@ def get_issues_from_epics(links: list[str], token: str) -> dict[int, str]:
         epic_iid = match.group("epic")
 
         # get group ID
-        gitlab_response = requests.get(
-            "https://gitlab.com/api/v4/groups",
-            timeout=10,
-            params={"search": group_name},
-            headers=gitlab_headers
-        )
+        group_id = get_group_id(group_name, token)
 
-        if not gitlab_response.ok:
-            logging.error("Failed to fetch group %s", group_name)
-            continue
-
-        payload = gitlab_response.json()
-        for group in payload:
-            if group["name"] == group_name:
-                group_id = group["id"]
-                logging.debug("Group %s has ID %s", group_name, group_id)
-                break
-
-        else:
-            logging.error("Failed to find ID of group %s", group_name)
-            continue
-
-        def paginate_issues(next_url = None) -> requests.Response:
-            """
-            Get issues in a GitLab epic.
-
-            :param next_url: URL to paginate through issues.
-                             If None, the initial request is created instead.
-            :return: Issues in the epic.
-            """
-            if next_url:
-                gitlab_response = requests.get(
-                    next_url,
-                    timeout=10,
-                    headers=gitlab_headers
-                )
-
-            else:
-                gitlab_response = requests.get(
-                    f"https://gitlab.com/api/v4/groups/{group_id}/epics/{epic_iid}/issues",
-                    timeout=10,
-                    params={"per_page": 100},
-                    headers=gitlab_headers
-                )
-
-            if not gitlab_response.ok:
-                logging.error("Failed to fetch issues in epic %s", epic_iid)
-                continue
-
-            return gitlab_response
-
-        # get issues in epic
-        gitlab_response = paginate_issues()
-        payload = gitlab_response.json()
-        for issue in payload:
-            issues.update({issue["id"]: issue["web_url"]})
-
-        # Paginate through issues
-        while "next" in gitlab_response.links:
-            gitlab_response = paginate_issues(gitlab_response.links["next"]["url"])
-            payload = gitlab_response.json()
+        for res in paginate_request(
+            f"https://gitlab.com/api/v4/groups/{group_id}/epics/{epic_iid}/issues",
+            {"per_page": GITLAB_PAGINATION_LIMIT},
+            gitlab_headers
+        ):
+            payload = res.json()
             for issue in payload:
                 issues.update({issue["id"]: issue["web_url"]})
 
@@ -813,6 +663,35 @@ def get_project_id(issue_link: str, token: str) -> int | None:
 
     logging.error("Failed to find ID of project %s", project_path)
     return None
+
+
+def paginate_request(
+    url: str,
+    params: dict,
+    headers: dict
+) -> typing.Generator[requests.Response, None, None]:
+    """
+    Paginate through a GitLab API request.
+
+    :param url: URL to the GitLab API.
+    :param params: Parameters for the request.
+    :param headers: Headers for the request.
+    :return: Response from the request.
+    """
+    response = requests.get(url, timeout=10, params=params, headers=headers)
+    if not response.ok:
+        logging.error("Failed to fetch %s", url)
+        return None
+
+    yield response
+
+    while "next" in response.links:
+        response = requests.get(response.links["next"]["url"], timeout=10, headers=headers)
+        if not response.ok:
+            logging.error("Failed to fetch %s", url)
+            return None
+
+        yield response
 
 
 if __name__ == '__main__':
