@@ -409,21 +409,47 @@ def get_issues_from_milestones(links: list[str], token: str) -> dict[int, str]:
         payload = gitlab_response.json()
         milestone_name = payload[0]["title"]
 
-        # get issues in milestone
-        gitlab_response = requests.get(
-            "https://gitlab.com/api/v4/issues",
-            timeout=10,
-            params={"milestone": milestone_name},
-            headers=gitlab_headers
-        )
+        def paginate_issues(next_url = None) -> requests.Response:
+            """
+            Get issues in a GitLab milestone.
 
-        if not gitlab_response.ok:
-            logging.error("Failed to fetch issues in milestone %s", milestone_name)
-            continue
+            :param next_url: URL to paginate through issues.
+                             If None, the initial request is created instead.
+            :return: Issues in the milestone.
+            """
+            if next_url:
+                gitlab_response = requests.get(
+                    next_url,
+                    timeout=10,
+                    headers=gitlab_headers
+                )
+
+            else:
+                gitlab_response = requests.get(
+                    "https://gitlab.com/api/v4/issues",
+                    timeout=10,
+                    params={"milestone": milestone_name, "per_page": 100},
+                    headers=gitlab_headers
+                )
+
+            if not gitlab_response.ok:
+                logging.error("Failed to fetch issues in milestone %s", milestone_name)
+                continue
+
+            return gitlab_response
+
+        gitlab_response = paginate_issues()
 
         payload = gitlab_response.json()
         for issue in payload:
             issues.update({issue["id"]: issue["web_url"]})
+
+        # Paginate through issues
+        while "next" in gitlab_response.links:
+            gitlab_response = paginate_issues(gitlab_response.links["next"]["url"])
+            payload = gitlab_response.json()
+            for issue in payload:
+                issues.update({issue["id"]: issue["web_url"]})
 
     return issues
 
@@ -451,21 +477,47 @@ def get_issues_from_iterations(links: list[str], token: str) -> dict[int, str]:
 
         iteration_id = match.group("iteration")
 
+        def paginate_issues(next_url = None) -> requests.Response:
+            """
+            Get issues in a GitLab iteration.
+
+            :param next_url: URL to paginate through issues.
+                             If None, the initial request is created instead.
+            :return: Issues in the iteration.
+            """
+            if next_url:
+                gitlab_response = requests.get(
+                    next_url,
+                    timeout=10,
+                    headers=gitlab_headers
+                )
+
+            else:
+                gitlab_response = requests.get(
+                    "https://gitlab.com/api/v4/issues",
+                    timeout=10,
+                    params={"iteration_id": iteration_id, "per_page": 100},
+                    headers=gitlab_headers
+                )
+
+            if not gitlab_response.ok:
+                logging.error("Failed to fetch issues in iteration %s", iteration_id)
+                continue
+
+            return gitlab_response
+
         # get issues in iteration
-        gitlab_response = requests.get(
-            "https://gitlab.com/api/v4/issues",
-            timeout=10,
-            params={"iteration_id": iteration_id, "per_page": 100},
-            headers=gitlab_headers
-        )
-
-        if not gitlab_response.ok:
-            logging.error("Failed to fetch issues in iteration %s", iteration_id)
-            continue
-
+        gitlab_response = paginate_issues()
         payload = gitlab_response.json()
         for issue in payload:
             issues.update({issue["id"]: issue["web_url"]})
+
+        # Paginate through issues
+        while "next" in gitlab_response.links:
+            gitlab_response = paginate_issues(gitlab_response.links["next"]["url"])
+            payload = gitlab_response.json()
+            for issue in payload:
+                issues.update({issue["id"]: issue["web_url"]})
 
     return issues
 
@@ -496,21 +548,47 @@ def get_issues_from_projects(links: list[str], token: str) -> dict[int, str]:
         # get project ID
         project_id = get_project_id(link, token)
 
+        def paginate_issues(next_url = None) -> requests.Response:
+            """
+            Get issues in a GitLab project.
+
+            :param next_url: URL to paginate through issues.
+                             If None, the initial request is created instead.
+            :return: Issues in the project.
+            """
+            if next_url:
+                gitlab_response = requests.get(
+                    next_url,
+                    timeout=10,
+                    headers=gitlab_headers
+                )
+
+            else:
+                gitlab_response = requests.get(
+                    f"https://gitlab.com/api/v4/projects/{project_id}/issues",
+                    timeout=10,
+                    params={"per_page": 100},
+                    headers=gitlab_headers
+                )
+
+            if not gitlab_response.ok:
+                logging.error("Failed to fetch issues in project %s", project_path)
+                continue
+
+            return gitlab_response
+
         # get issues in project
-        gitlab_response = requests.get(
-            f"https://gitlab.com/api/v4/projects/{project_id}/issues",
-            timeout=10,
-            params={"per_page": 100},
-            headers=gitlab_headers
-        )
-
-        if not gitlab_response.ok:
-            logging.error("Failed to fetch issues in project %s", project_path)
-            continue
-
+        gitlab_response = paginate_issues()
         payload = gitlab_response.json()
         for issue in payload:
             issues.update({issue["id"]: issue["web_url"]})
+
+        # Paginate through issues
+        while "next" in gitlab_response.links:
+            gitlab_response = paginate_issues(gitlab_response.links["next"]["url"])
+            payload = gitlab_response.json()
+            for issue in payload:
+                issues.update({issue["id"]: issue["web_url"]})
 
     return issues
 
@@ -562,21 +640,47 @@ def get_issues_from_epics(links: list[str], token: str) -> dict[int, str]:
             logging.error("Failed to find ID of group %s", group_name)
             continue
 
+        def paginate_issues(next_url = None) -> requests.Response:
+            """
+            Get issues in a GitLab epic.
+
+            :param next_url: URL to paginate through issues.
+                             If None, the initial request is created instead.
+            :return: Issues in the epic.
+            """
+            if next_url:
+                gitlab_response = requests.get(
+                    next_url,
+                    timeout=10,
+                    headers=gitlab_headers
+                )
+
+            else:
+                gitlab_response = requests.get(
+                    f"https://gitlab.com/api/v4/groups/{group_id}/epics/{epic_iid}/issues",
+                    timeout=10,
+                    params={"per_page": 100},
+                    headers=gitlab_headers
+                )
+
+            if not gitlab_response.ok:
+                logging.error("Failed to fetch issues in epic %s", epic_iid)
+                continue
+
+            return gitlab_response
+
         # get issues in epic
-        gitlab_response = requests.get(
-            f"https://gitlab.com/api/v4/groups/{group_id}/epics/{epic_iid}/issues",
-            timeout=10,
-            params={"per_page": 100},
-            headers=gitlab_headers
-        )
-
-        if not gitlab_response.ok:
-            logging.error("Failed to fetch issues in epic %s", epic_iid)
-            continue
-
+        gitlab_response = paginate_issues()
         payload = gitlab_response.json()
         for issue in payload:
             issues.update({issue["id"]: issue["web_url"]})
+
+        # Paginate through issues
+        while "next" in gitlab_response.links:
+            gitlab_response = paginate_issues(gitlab_response.links["next"]["url"])
+            payload = gitlab_response.json()
+            for issue in payload:
+                issues.update({issue["id"]: issue["web_url"]})
 
     return issues
 
