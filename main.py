@@ -199,7 +199,8 @@ def transfer_points(plans: list[dict], gitlab_token: str, overwrite: bool = Fals
         gitlab_response = requests.get(
             f"https://gitlab.com/api/v4/projects/{project_id}/issues/{issue_iid}",
             timeout=10,
-            headers=gitlab_headers)
+            headers=gitlab_headers
+        )
         payload = gitlab_response.json()
 
         if not gitlab_response.ok:
@@ -222,7 +223,8 @@ def transfer_points(plans: list[dict], gitlab_token: str, overwrite: bool = Fals
             f"https://gitlab.com/api/v4/projects/{project_id}/issues/{issue_iid}",
             timeout=10,
             headers=gitlab_headers,
-            json={"weight": points})
+            json={"weight": points}
+        )
 
         if not gitlab_response.ok:
             logging.error("Failed to set weight for %s#%s", project_path, issue_iid)
@@ -453,7 +455,7 @@ def get_issues_from_iterations(links: list[str], token: str) -> dict[int, str]:
         gitlab_response = requests.get(
             "https://gitlab.com/api/v4/issues",
             timeout=10,
-            params={"iteration_id": iteration_id},
+            params={"iteration_id": iteration_id, "per_page": 100},
             headers=gitlab_headers
         )
 
@@ -498,6 +500,7 @@ def get_issues_from_projects(links: list[str], token: str) -> dict[int, str]:
         gitlab_response = requests.get(
             f"https://gitlab.com/api/v4/projects/{project_id}/issues",
             timeout=10,
+            params={"per_page": 100},
             headers=gitlab_headers
         )
 
@@ -563,6 +566,7 @@ def get_issues_from_epics(links: list[str], token: str) -> dict[int, str]:
         gitlab_response = requests.get(
             f"https://gitlab.com/api/v4/groups/{group_id}/epics/{epic_iid}/issues",
             timeout=10,
+            params={"per_page": 100},
             headers=gitlab_headers
         )
 
@@ -602,7 +606,8 @@ def get_issue_info(issue_link: str, token: str) -> dict | None:
         "https://gitlab.com/api/v4/projects",
         timeout=10,
         params={"search": project_path},
-        headers=gitlab_headers)
+        headers=gitlab_headers
+    )
     payload = gitlab_response.json()
 
     # Find project ID
@@ -620,7 +625,8 @@ def get_issue_info(issue_link: str, token: str) -> dict | None:
     gitlab_response = requests.get(
         f"https://gitlab.com/api/v4/projects/{project_id}/issues/{issue_iid}",
         timeout=10,
-        headers=gitlab_headers)
+        headers=gitlab_headers
+    )
 
     if not gitlab_response.ok:
         logging.error("Failed to fetch issue %s#%s", project_path, issue_iid)
@@ -645,7 +651,8 @@ def get_group_id(group_name: str, token: str) -> int | None:
         "https://gitlab.com/api/v4/groups",
         timeout=10,
         params={"search": group_name},
-        headers=gitlab_headers)
+        headers=gitlab_headers
+    )
 
     if not gitlab_response.ok:
         logging.error("Failed to fetch group %s", group_name)
@@ -689,7 +696,8 @@ def get_project_id(issue_link: str, token: str) -> int | None:
         f"https://gitlab.com/api/v4/groups/{group_id}/projects",
         timeout=10,
         params={"scope": "projects", "search": project_path},
-        headers=gitlab_headers)
+        headers=gitlab_headers
+    )
     payload = gitlab_response.json()
 
     # Find project ID
