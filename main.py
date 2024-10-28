@@ -7,8 +7,9 @@ Main entrypoint for the application.
 import argparse
 import logging
 import re
-import requests
 import typing
+
+import requests
 
 GITLAB_ORGA_MILESTONE_REGEX = re.compile(
     r"https:\/\/gitlab\.com\/groups/(?P<orga>[a-zA-Z0-9\-\_]+)\/-\/"
@@ -98,9 +99,12 @@ def parse_args() -> argparse.Namespace:
     gitlab_items.add_argument("--issues", nargs="+", default=[],
                               help="Links to issues to include in the battle")
 
-    create_parser.add_argument("--with-weighted", action="store_true",
+    create_parser.add_argument("--with-weighted",action="store_true",
                                help=("Include GitLab items in the battle "
-                                     "that already have a weight set"))
+                               "that already have a weight set"))
+    create_parser.add_argument("--with-closed", action="store_true",
+                               help=("Include GitLab items in the battle "
+                               "that are closed"))
 
     return parser.parse_args()
 
@@ -119,6 +123,11 @@ def main() -> None:
 
     elif args.command == "create":
         plans = create_plans(args)
+
+        if not plans:
+            logging.info("Skipping battle creation: No plans generated")
+            return
+
         create_game(plans, args)
 
 
@@ -133,14 +142,16 @@ def fetch_plans(battle_id: str, api_key: str) -> list[dict]:
     logging.info("Fetching plans for battle %s...", battle_id)
 
     thunderdome_headers = {
-        'accept': "application/json",
+        "accept": "application/json",
         "X-API-Key": api_key,
     }
 
     # Thunderdome request
-    thunderdome_response = requests.get(f"https://thunderdome.dev/api/battles/{battle_id}",
-                                        timeout=10,
-                                        headers=thunderdome_headers)
+    thunderdome_response = requests.get(
+        f"https://thunderdome.dev/api/battles/{battle_id}",
+        timeout=10,
+        headers=thunderdome_headers,
+    )
 
     if not thunderdome_response.ok:
         logging.error("Failed to fetch battle %s", battle_id)
@@ -153,7 +164,11 @@ def fetch_plans(battle_id: str, api_key: str) -> list[dict]:
     return payload["data"]["plans"]
 
 
-def transfer_points(plans: list[dict], gitlab_token: str, overwrite: bool = False) -> None:
+def transfer_points(
+    plans: list[dict], 
+    gitlab_token: str, 
+    overwrite: bool = False
+) -> None:
     """
     Transfer points to GitLab issues.
 
@@ -177,8 +192,11 @@ def transfer_points(plans: list[dict], gitlab_token: str, overwrite: bool = Fals
             _ = int(points)
 
         except ValueError:
-            logging.error("Skipping plan %s: Points is not an integer, found '%s' instead",
-                          plan["id"], points)
+            logging.error(
+                "Skipping plan %s: Points is not an integer, found '%s' instead",
+                plan["id"],
+                points,
+            )
             continue
 
         link = plan["link"]
@@ -188,22 +206,28 @@ def transfer_points(plans: list[dict], gitlab_token: str, overwrite: bool = Fals
 
         match = re.match(GITLAB_ISSUE_URL_REGEX, plan["link"])
         if not match:
-            logging.error(("Skipping plan %s: Invalid URL '%s' does "
-                           "not match GitLab URL pattern '%s'"),
-                          plan["id"], plan["link"], GITLAB_ISSUE_URL_REGEX.pattern)
+            logging.error(
+                (
+                    "Skipping plan %s: Invalid URL '%s' does "
+                    "not match GitLab URL pattern '%s'"
+                ),
+                plan["id"],
+                plan["link"],
+                GITLAB_ISSUE_URL_REGEX.pattern,
+            )
             continue
 
         project_path = match.group("project")
         issue_iid = match.group("issue")
 
         # Get project ID
-        project_id = get_project_id(link, gitlab_token)
+        project_id = get_project_id(link, gitlab_token, GITLAB_ISSUE_URL_REGEX)
 
         # Get issue information
         gitlab_response = requests.get(
             f"https://gitlab.com/api/v4/projects/{project_id}/issues/{issue_iid}",
             timeout=10,
-            headers=gitlab_headers
+            headers=gitlab_headers,
         )
         payload = gitlab_response.json()
 
@@ -212,14 +236,19 @@ def transfer_points(plans: list[dict], gitlab_token: str, overwrite: bool = Fals
             continue
 
         if not "weight" in payload:
-            logging.error("No 'weight' for issue in API response. Are you authenticated?")
+            logging.error(
+                "No 'weight' for issue in API response. Are you authenticated?"
+            )
             continue
 
         previous_weight = payload["weight"]
 
         if previous_weight is not None and overwrite is False:
-            logging.info("Skipping %s#%s: Issue already has a weight set",
-                         project_path, issue_iid)
+            logging.info(
+                "Skipping %s#%s: Issue already has a weight set",
+                project_path,
+                issue_iid,
+            )
             continue
 
         # Set weight
@@ -227,7 +256,7 @@ def transfer_points(plans: list[dict], gitlab_token: str, overwrite: bool = Fals
             f"https://gitlab.com/api/v4/projects/{project_id}/issues/{issue_iid}",
             timeout=10,
             headers=gitlab_headers,
-            json={"weight": points}
+            json={"weight": points},
         )
 
         if not gitlab_response.ok:
@@ -235,11 +264,17 @@ def transfer_points(plans: list[dict], gitlab_token: str, overwrite: bool = Fals
 
         else:
             if previous_weight is not None:
-                logging.info("Changed weight to %s for %s#%s (was %s)",
-                             points, project_path, issue_iid, previous_weight)
+                logging.info(
+                    "Changed weight to %s for %s#%s (was %s)",
+                    points,
+                    project_path,
+                    issue_iid,
+                    previous_weight,
+                )
             else:
-                logging.info("Set weight to %s for %s#%s",
-                             points, project_path, issue_iid)
+                logging.info(
+                    "Set weight to %s for %s#%s", points, project_path, issue_iid
+                )
 
 
 def create_game(plans: list[dict], args: argparse.Namespace) -> None:
@@ -250,14 +285,13 @@ def create_game(plans: list[dict], args: argparse.Namespace) -> None:
     :args: Command line arguments.
     """
     thunderdome_headers = {
-        'accept': "application/json",
+        "accept": "application/json",
         "X-API-Key": args.api_key,
     }
 
     thunderdome_response = requests.get(
-        "https://thunderdome.dev/api/auth/user",
-        timeout=10,
-        headers=thunderdome_headers)
+        "https://thunderdome.dev/api/auth/user", timeout=10, headers=thunderdome_headers
+    )
     payload = thunderdome_response.json()
     user_id = payload["data"]["id"]
 
@@ -266,8 +300,14 @@ def create_game(plans: list[dict], args: argparse.Namespace) -> None:
     # query parameters
     battle_settings_query = {
         "userId": user_id,
-        "teamId": args.teamid,
     }
+
+    request_url = f"https://thunderdome.dev/api/users/{user_id}/battles"
+    if args.teamid is not None:
+        battle_settings_query["teamId"] = args.teamid
+        request_url = (
+            f"https://thunderdome.dev/api/teams/{args.teamid}/users/{user_id}/battles"
+        )
 
     # mandatory body parameters
     battle_settings_body = {
@@ -297,11 +337,12 @@ def create_game(plans: list[dict], args: argparse.Namespace) -> None:
         battle_settings_body["leaderCode"] = args.leader_password
 
     thunderdome_response = requests.post(
-        f"https://thunderdome.dev/api/teams/{args.teamid}/users/{user_id}/battles",
+        request_url,
         timeout=10,
         headers=thunderdome_headers,
         params=battle_settings_query,
-        json=battle_settings_body)
+        json=battle_settings_body,
+    )
 
     if not thunderdome_response.ok:
         logging.error("Failed to create battle")
@@ -335,12 +376,19 @@ def create_plans(args: argparse.Namespace) -> list[dict]:
 
     logging.info("Found %d unique issues", len(issues))
 
-    plans = create_plans_from_issues(issues, args.token)
+    plans = create_plans_from_issues(
+        issues, args.token, args.with_weighted, args.with_closed
+    )
 
     return plans
 
 
-def create_plans_from_issues(links: dict[int, str], token: str) -> list[dict]:
+def create_plans_from_issues(
+    links: dict[int, str], 
+    token: str,
+    with_weighted: bool = False,
+    with_closed: bool = False
+) -> list[dict]:
     """
     Create Thunderdome plans from GitLab issues.
 
@@ -354,6 +402,27 @@ def create_plans_from_issues(links: dict[int, str], token: str) -> list[dict]:
     for issue_link in links.values():
         issue = get_issue_info(issue_link, token)
 
+        match = re.match(GITLAB_ISSUE_URL_REGEX, issue_link)
+
+        if not with_weighted:
+            if issue["weight"] is not None:
+                logging.info(
+                    "Skipping %s#%s: Issue already has a weight set",
+                    match.group("project"),
+                    match.group("issue")
+                )
+                continue
+
+        if not with_closed:
+            if not issue["state"] == "opened":
+                # Skip closed issues
+                logging.info(
+                    "Skipping %s#%s: Issue is closed",
+                    match.group("project"),
+                    match.group("issue")
+                )
+                continue
+
         if issue:
             plan = {
                 "description": issue["description"],
@@ -361,7 +430,7 @@ def create_plans_from_issues(links: dict[int, str], token: str) -> list[dict]:
                 "link": issue["web_url"],
                 "name": issue["title"],
                 # "priority": issue["priority"], # TODO: Get priority from labels
-                "referenceId": str(issue["iid"]),
+                "referenceId": f"{match.group('project')}#{issue['iid']}",
                 "type": "Task",
             }
             plans.append(plan)
@@ -389,7 +458,9 @@ def get_issues_from_milestones(links: list[str], token: str) -> dict[int, str]:
         if not match:
             logging.error(
                 "Invalid URL '%s' does not match GitLab URL pattern '%s'",
-                link, GITLAB_ORGA_MILESTONE_REGEX.pattern)
+                link,
+                GITLAB_ORGA_MILESTONE_REGEX.pattern,
+            )
             continue
 
         group_name = match.group("orga")
@@ -403,7 +474,7 @@ def get_issues_from_milestones(links: list[str], token: str) -> dict[int, str]:
             f"https://gitlab.com/api/v4/groups/{group_id}/milestones",
             timeout=10,
             params={"iids": [milestone_iid]},
-            headers=gitlab_headers
+            headers=gitlab_headers,
         )
 
         if not gitlab_response.ok:
@@ -415,8 +486,12 @@ def get_issues_from_milestones(links: list[str], token: str) -> dict[int, str]:
 
         for res in paginate_request(
             "https://gitlab.com/api/v4/issues",
-            {"milestone": milestone_name, "per_page": GITLAB_PAGINATION_LIMIT},
-            gitlab_headers
+            {
+                "milestone": milestone_name, 
+                "per_page": GITLAB_PAGINATION_LIMIT, 
+                "scope": "all",
+            },
+            gitlab_headers,
         ):
             payload = res.json()
             for issue in payload:
@@ -442,16 +517,23 @@ def get_issues_from_iterations(links: list[str], token: str) -> dict[int, str]:
     for link in links:
         match = re.match(GITLAB_ITERATION_REGEX, link)
         if not match:
-            logging.error("Invalid URL '%s' does not match GitLab URL pattern '%s'",
-                          link, GITLAB_ITERATION_REGEX.pattern)
+            logging.error(
+                "Invalid URL '%s' does not match GitLab URL pattern '%s'",
+                link,
+                GITLAB_ITERATION_REGEX.pattern,
+            )
             continue
 
         iteration_id = match.group("iteration")
 
         for res in paginate_request(
             "https://gitlab.com/api/v4/issues",
-            {"iteration_id": iteration_id, "per_page": GITLAB_PAGINATION_LIMIT},
-            gitlab_headers
+            {
+                "iteration_id": iteration_id, 
+                "per_page": GITLAB_PAGINATION_LIMIT,
+                "scope": "all",
+            },
+            gitlab_headers,
         ):
             payload = res.json()
             for issue in payload:
@@ -477,17 +559,23 @@ def get_issues_from_projects(links: list[str], token: str) -> dict[int, str]:
     for link in links:
         match = re.match(GITLAB_PROJECT_URL_REGEX, link)
         if not match:
-            logging.error("Invalid URL '%s' does not match GitLab URL pattern '%s'",
-                          link, GITLAB_PROJECT_URL_REGEX.pattern)
+            logging.error(
+                "Invalid URL '%s' does not match GitLab URL pattern '%s'",
+                link,
+                GITLAB_PROJECT_URL_REGEX.pattern,
+            )
             continue
 
         # get project ID
-        project_id = get_project_id(link, token)
+        project_id = get_project_id(link, token, GITLAB_PROJECT_URL_REGEX)
 
         for res in paginate_request(
             f"https://gitlab.com/api/v4/projects/{project_id}/issues",
-            {"per_page": GITLAB_PAGINATION_LIMIT},
-            gitlab_headers
+            {
+                "per_page": GITLAB_PAGINATION_LIMIT, 
+                "scope": "all",
+            },
+            gitlab_headers,
         ):
             payload = res.json()
             for issue in payload:
@@ -513,8 +601,11 @@ def get_issues_from_epics(links: list[str], token: str) -> dict[int, str]:
     for link in links:
         match = re.match(GITLAB_EPIC_URL_REGEX, link)
         if not match:
-            logging.error("Invalid URL '%s' does not match GitLab URL pattern '%s'",
-                          link, GITLAB_EPIC_URL_REGEX.pattern)
+            logging.error(
+                "Invalid URL '%s' does not match GitLab URL pattern '%s'",
+                link,
+                GITLAB_EPIC_URL_REGEX.pattern,
+            )
             continue
 
         group_name = match.group("orga")
@@ -525,8 +616,11 @@ def get_issues_from_epics(links: list[str], token: str) -> dict[int, str]:
 
         for res in paginate_request(
             f"https://gitlab.com/api/v4/groups/{group_id}/epics/{epic_iid}/issues",
-            {"per_page": GITLAB_PAGINATION_LIMIT},
-            gitlab_headers
+            {
+                "per_page": GITLAB_PAGINATION_LIMIT, 
+                "scope": "all",
+            },
+            gitlab_headers,
         ):
             payload = res.json()
             for issue in payload:
@@ -548,38 +642,24 @@ def get_issue_info(issue_link: str, token: str) -> dict | None:
 
     match = re.match(GITLAB_ISSUE_URL_REGEX, issue_link)
     if not match:
-        logging.error("Invalid URL '%s' does not match GitLab URL pattern '%s'",
-                      issue_link, GITLAB_ISSUE_URL_REGEX.pattern)
+        logging.error(
+            "Invalid URL '%s' does not match GitLab URL pattern '%s'",
+            issue_link,
+            GITLAB_ISSUE_URL_REGEX.pattern,
+        )
         return None
 
     project_path = match.group("project")
     issue_iid = match.group("issue")
 
     # Get project ID
-    gitlab_response = requests.get(
-        "https://gitlab.com/api/v4/projects",
-        timeout=10,
-        params={"search": project_path},
-        headers=gitlab_headers
-    )
-    payload = gitlab_response.json()
-
-    # Find project ID
-    for project in payload:
-        if project["path"] == project_path:
-            project_id = project["id"]
-            logging.debug("Project %s has ID %s", project_path, project_id)
-            break
-
-    else:
-        logging.error("Failed to find ID of project %s", project_path)
-        return None
+    project_id = get_project_id(issue_link, token, GITLAB_ISSUE_URL_REGEX)
 
     # Get issue information
     gitlab_response = requests.get(
         f"https://gitlab.com/api/v4/projects/{project_id}/issues/{issue_iid}",
         timeout=10,
-        headers=gitlab_headers
+        headers=gitlab_headers,
     )
 
     if not gitlab_response.ok:
@@ -589,11 +669,11 @@ def get_issue_info(issue_link: str, token: str) -> dict | None:
     return gitlab_response.json()
 
 
-def get_group_id(group_name: str, token: str) -> int | None:
+def get_group_id(group_path: str, token: str) -> int | None:
     """
     Get the ID of a GitLab group.
 
-    :param group_name: Name of the GitLab group.
+    :param group_path: Group path name in the GitLab URL.
     :param token: Token for the GitLab API.
     """
     gitlab_headers = {
@@ -604,26 +684,26 @@ def get_group_id(group_name: str, token: str) -> int | None:
     gitlab_response = requests.get(
         "https://gitlab.com/api/v4/groups",
         timeout=10,
-        params={"search": group_name},
-        headers=gitlab_headers
+        params={"search": group_path},
+        headers=gitlab_headers,
     )
 
     if not gitlab_response.ok:
-        logging.error("Failed to fetch group %s", group_name)
+        logging.error("Failed to fetch group %s", group_path)
         return None
 
     payload = gitlab_response.json()
     for group in payload:
-        if group["name"] == group_name:
+        if group["path"] == group_path:
             group_id = group["id"]
-            logging.debug("Group %s has ID %s", group_name, group_id)
+            logging.debug("Group %s has ID %s", group_path, group_id)
             return group_id
 
-    logging.error("Failed to find ID of group %s", group_name)
+    logging.error("Failed to find ID of group %s", group_path)
     return None
 
 
-def get_project_id(issue_link: str, token: str) -> int | None:
+def get_project_id(issue_link: str, token: str, regex) -> int | None:
     """
     Get the ID of a GitLab project from a GitLab issue.
 
@@ -634,10 +714,13 @@ def get_project_id(issue_link: str, token: str) -> int | None:
         "PRIVATE-TOKEN": token,
     }
 
-    match = re.match(GITLAB_ISSUE_URL_REGEX, issue_link)
+    match = re.match(regex, issue_link)
     if not match:
-        logging.error("Invalid URL '%s' does not match GitLab URL pattern '%s'",
-                      issue_link, GITLAB_ISSUE_URL_REGEX.pattern)
+        logging.error(
+            "Invalid URL '%s' does not match GitLab URL pattern '%s'",
+            issue_link,
+            regex.pattern,
+        )
         return None
 
     group_name = match.group("orga")
@@ -647,10 +730,10 @@ def get_project_id(issue_link: str, token: str) -> int | None:
 
     # Get project ID
     gitlab_response = requests.get(
-        f"https://gitlab.com/api/v4/groups/{group_id}/projects",
+        f"https://gitlab.com/api/v4/groups/{group_id}/search",
         timeout=10,
         params={"scope": "projects", "search": project_path},
-        headers=gitlab_headers
+        headers=gitlab_headers,
     )
     payload = gitlab_response.json()
 
@@ -666,9 +749,7 @@ def get_project_id(issue_link: str, token: str) -> int | None:
 
 
 def paginate_request(
-    url: str,
-    params: dict,
-    headers: dict
+    url: str, params: dict, headers: dict
 ) -> typing.Generator[requests.Response, None, None]:
     """
     Paginate through a GitLab API request.
@@ -686,7 +767,9 @@ def paginate_request(
     yield response
 
     while "next" in response.links:
-        response = requests.get(response.links["next"]["url"], timeout=10, headers=headers)
+        response = requests.get(
+            response.links["next"]["url"], timeout=10, headers=headers
+        )
         if not response.ok:
             logging.error("Failed to fetch %s", url)
             return None
@@ -694,5 +777,5 @@ def paginate_request(
         yield response
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
