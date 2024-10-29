@@ -29,8 +29,8 @@ class MapPriorityAction(argparse.Action):
 
         result = {}
         for key, val in batched(values, n=2):
-            priority = int(key)
-            label = str(val)
+            label = str(key)
+            priority = int(val)
             if priority not in (1,2,3,4,5,6,99):
                 raise argparse.ArgumentTypeError("Thunderdome priority must be one of "
                                                  "1,2,3,4,5,6,99")
@@ -107,8 +107,8 @@ def parse_args() -> argparse.Namespace:
                                help=("Include GitLab items in the battle "
                                "that are closed"))
 
-    create_parser.add_argument("--map-priority", action=MapPriorityAction, nargs="*",
-                               help="Map Thunderdome priorities to GitLab labels")
+    create_parser.add_argument("--label-priority", action=MapPriorityAction, nargs="*",
+                               help="Map GitLab labels to Thunderdome priorities")
 
     return parser.parse_args()
 
