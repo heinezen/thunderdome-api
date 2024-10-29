@@ -55,8 +55,7 @@ def get_updated_plans(plans: list[dict], args: argparse.Namespace) -> list[dict]
     new_plans = create_plans_from_issues(
         issues,
         args.token,
-        # args.label_priority,
-        None,
+        args.label_priority,
         args.with_weighted,
         args.with_closed
     )
