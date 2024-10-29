@@ -12,6 +12,7 @@ from itertools import batched
 from create.game import create_game
 from create.plan import create_plans
 from fetch.point_transfer import transfer_points
+from update.plan import update_plans
 from util.thunderdome_plan import get_plans
 
 
@@ -186,6 +187,14 @@ def main() -> None:
             return
 
         create_game(plans, args)
+
+    elif args.command == "update":
+        plans = get_plans(args.battleid, args.api_key)
+
+        logging.info("Found %d unique Thunderdome plans", len(plans))
+
+        update_plans(plans, args)
+
 
 
 if __name__ == "__main__":
