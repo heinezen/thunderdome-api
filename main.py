@@ -7,10 +7,33 @@ Main entrypoint for the application.
 import argparse
 import logging
 
+from itertools import batched
+
 from create.game import create_game
 from create.plan import create_plans
 from fetch.point_transfer import transfer_points
 from util.thunderdome_plan import get_plans
+
+
+class MapPriorityAction(argparse.Action):
+    """
+    Action for parsing GitLab labels to Thunderdome priorities.
+    """
+    def __init__(self, option_strings, dest, nargs=None, **kwargs):
+        super().__init__(option_strings, dest, nargs=nargs, **kwargs)
+
+    def __call__(self, parser, namespace, values, option_string=None):
+        if not (len(values) % 2 == 0):
+            raise argparse.ArgumentTypeError("Priority assignment items list "
+                                             "must have even length")
+
+        setattr(namespace, self.dest, {})
+        for key, val in batched(values, n=2):
+            priority = int(key)
+            if priority not in (1,2,3,4,5,6,99):
+                raise argparse.ArgumentTypeError("Thunderdome priority must be one of "
+                                                 "1,2,3,4,5,6,99")
+            getattr(namespace, self.dest)[int(key)] = str(val)
 
 
 def parse_args() -> argparse.Namespace:
@@ -72,12 +95,15 @@ def parse_args() -> argparse.Namespace:
     gitlab_items.add_argument("--issues", nargs="+", default=[],
                               help="Links to issues to include in the battle")
 
-    create_parser.add_argument("--with-weighted",action="store_true",
+    create_parser.add_argument("--with-weighted", action="store_true",
                                help=("Include GitLab items in the battle "
                                "that already have a weight set"))
     create_parser.add_argument("--with-closed", action="store_true",
                                help=("Include GitLab items in the battle "
                                "that are closed"))
+
+    create_parser.add_argument("--map-priority", action=MapPriorityAction, nargs="*",
+                               help="Map Thunderdome priorities to GitLab labels")
 
     return parser.parse_args()
 
