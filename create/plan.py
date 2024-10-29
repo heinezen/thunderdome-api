@@ -44,8 +44,16 @@ def create_plans(args: argparse.Namespace) -> list[dict]:
     logging.info("Found %d unique issues", len(issues))
 
     plans = create_plans_from_issues(
-        issues, args.token, args.with_weighted, args.with_closed
+        issues,
+        args.token,
+        args.label_priority,
+        args.with_weighted,
+        args.with_closed
     )
+
+    if args.label_priority:
+        # Sort plans by their priority
+        plans.sort(key=lambda x: x["priority"])
 
     return plans
 
@@ -53,6 +61,7 @@ def create_plans(args: argparse.Namespace) -> list[dict]:
 def create_plans_from_issues(
     links: dict[int, str],
     token: str,
+    label_priority: dict[str, int] = None,
     with_weighted: bool = False,
     with_closed: bool = False
 ) -> list[dict]:
@@ -61,6 +70,9 @@ def create_plans_from_issues(
 
     :param links: GitLab issues to create plans from.
     :param token: Token for the GitLab API.
+    :param label_priority: Map of GitLab labels to Thunderdome priority value.
+    :param with_weighted: Create plans for already weighted issues.
+    :param with_closed: Create plans for already closed issues.
     :return: Plans for the battle.
     """
     logging.info("Fetching issues from GitLab...")
@@ -70,6 +82,9 @@ def create_plans_from_issues(
         issue = get_issue_info(issue_link, token)
 
         match = re.match(GITLAB_ISSUE_URL_REGEX, issue_link)
+
+        if not issue:
+            continue
 
         if not with_weighted:
             if issue["weight"] is not None:
@@ -90,16 +105,23 @@ def create_plans_from_issues(
                 )
                 continue
 
-        if issue:
-            plan = {
-                "description": issue["description"],
-                "id": str(issue["id"]),
-                "link": issue["web_url"],
-                "name": issue["title"],
-                # "priority": issue["priority"], # TODO: Get priority from labels
-                "referenceId": f"{match.group('project')}#{issue['iid']}",
-                "type": "Task",
-            }
-            plans.append(plan)
+        # Priority of plan (99 is default for 'no priority')
+        priority = 99
+        if label_priority:
+            for label, prio in label_priority.items():
+                if label in issue['labels']:
+                    priority = prio
+                    break
+
+        plan = {
+            "description": issue["description"],
+            "id": str(issue["id"]),
+            "link": issue["web_url"],
+            "name": issue["title"],
+            "priority": priority,
+            "referenceId": f"{match.group('project')}#{issue['iid']}",
+            "type": "Task",
+        }
+        plans.append(plan)
 
     return plans
