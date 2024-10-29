@@ -65,6 +65,14 @@ def parse_args() -> argparse.Namespace:
     create_parser.add_argument('api_key', help='API key for the Thunderdome API')
     create_parser.add_argument('token', help='Token for the GitLab API')
 
+    update_parser = subparsers.add_parser(
+        'update', help='Update Thunderdome battles from GitLab items')
+    update_parser.add_argument('battleid', help='Battle ID to fetch')
+    update_parser.add_argument('api_key', help='API key for the Thunderdome API')
+    update_parser.add_argument('token', help='Token for the GitLab API')
+
+    # TODO: Use a shared parser for common arguments
+
     # Thunderdome battle creation arguments
     battle_settings = create_parser.add_argument_group('Battle creation arguments')
     battle_settings.add_argument('--auto-finish', action='store_true',
@@ -108,6 +116,51 @@ def parse_args() -> argparse.Namespace:
                                "that are closed"))
 
     create_parser.add_argument("--label-priority", action=MapPriorityAction, nargs="*",
+                               help="Map GitLab labels to Thunderdome priorities")
+
+    # Thunderdome battle creation arguments
+    battle_settings = update_parser.add_argument_group('Battle creation arguments')
+    battle_settings.add_argument('--auto-finish', action='store_true',
+                                 help='Automatically finish the battle when everybody voted')
+    battle_settings.add_argument('--leaders', nargs='+', type=str,
+                                 help='User IDs of leaders')
+    battle_settings.add_argument('--scale_id', type=str, help='Estimation scale ID')
+    battle_settings.add_argument('--hide-identity', action='store_true',
+                                 help='Hide identities of participants')
+    battle_settings.add_argument('--join-password', type=str,
+                                 help='Password for joining the battle')
+    battle_settings.add_argument('--leader-password', type=str,
+                                 help='Password for leading the battle')
+    battle_settings.add_argument('--name', type=str, default="API Game",
+                                 help='Name of the battle in Thunderdome')
+    battle_settings.add_argument('--teamid', type=str, help='Team ID to create battle for')
+    battle_settings.add_argument('--round-type', type=str, choices=('ceil', 'round', 'floor'),
+                                 default='ceil',
+                                 help='Rounding method for points')
+    battle_settings.add_argument('--allowed-values', nargs='+', type=str, default=[],
+                                 help='Allowed values for points')
+
+    # GitLab items
+    gitlab_items = update_parser.add_argument_group('GitLab items to include in the battle')
+    gitlab_items.add_argument("--milestones", nargs="+", default=[],
+                              help="Links to milestones to include in the battle")
+    gitlab_items.add_argument("--iterations", nargs="+", default=[],
+                              help="Links to iterations to include in the battle")
+    gitlab_items.add_argument("--projects", nargs="+", default=[],
+                              help="Links to projects to include in the battle")
+    gitlab_items.add_argument("--epics", nargs="+", default=[],
+                              help="Links to epics to include in the battle")
+    gitlab_items.add_argument("--issues", nargs="+", default=[],
+                              help="Links to issues to include in the battle")
+
+    update_parser.add_argument("--with-weighted",action="store_true",
+                               help=("Include GitLab items in the battle "
+                               "that already have a weight set"))
+    update_parser.add_argument("--with-closed", action="store_true",
+                               help=("Include GitLab items in the battle "
+                               "that are closed"))
+
+    update_parser.add_argument("--label-priority", action=MapPriorityAction, nargs="*",
                                help="Map GitLab labels to Thunderdome priorities")
 
     return parser.parse_args()
