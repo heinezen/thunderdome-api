@@ -141,7 +141,9 @@ def parse_args() -> argparse.Namespace:
                                "that are closed"))
 
     update_parser.add_argument("--label-priority", action=MapPriorityAction, nargs="*",
-                               help="Map GitLab labels to Thunderdome priorities")
+                               help=("Map GitLab label names to Thunderdome priorities"
+                                     "(Example: 'high 1 medium 2')"
+                               ))
 
     return parser.parse_args()
 
