@@ -23,17 +23,22 @@ class MapPriorityAction(argparse.Action):
         super().__init__(option_strings, dest, nargs=nargs, **kwargs)
 
     def __call__(self, parser, namespace, values, option_string=None):
-        if not (len(values) % 2 == 0):
+        if not len(values) % 2 == 0:
             raise argparse.ArgumentTypeError("Priority assignment items list "
                                              "must have even length")
 
-        setattr(namespace, self.dest, {})
+        result = {}
         for key, val in batched(values, n=2):
             priority = int(key)
+            label = str(val)
             if priority not in (1,2,3,4,5,6,99):
                 raise argparse.ArgumentTypeError("Thunderdome priority must be one of "
                                                  "1,2,3,4,5,6,99")
-            getattr(namespace, self.dest)[int(key)] = str(val)
+            result[label] = priority
+
+        result = dict(sorted(result.items(), key=lambda item: item[1]))
+
+        setattr(namespace, self.dest, result)
 
 
 def parse_args() -> argparse.Namespace:
