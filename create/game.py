@@ -8,6 +8,8 @@ import typing
 
 import requests
 
+from update.game import update_game
+
 if typing.TYPE_CHECKING:
     import argparse
 
@@ -47,7 +49,7 @@ def create_game(plans: list[dict], args: argparse.Namespace) -> None:
     # mandatory body parameters
     battle_settings_body = {
         "name": args.name,
-        "plans": plans,
+        "plans": [], # plans, # TODO: Create plans when priority assignment works
         "pointAverageRounding": args.round_type,
         "pointValuesAllowed": args.allowed_values,
     }
@@ -82,3 +84,8 @@ def create_game(plans: list[dict], args: argparse.Namespace) -> None:
     if not thunderdome_response.ok:
         logging.error("Failed to create battle")
         logging.error(thunderdome_response.json())
+
+    # TODO: Dirty fix because Thunderdome seems to ignore priorities on create
+    # but not for updates
+    battle_id = thunderdome_response.json()["data"]["id"]
+    update_game(battle_id, plans, args)
