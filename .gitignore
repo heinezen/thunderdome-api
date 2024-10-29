@@ -1,2 +1,6 @@
 # IDE files
 /.vscode/
+
+# Cache files
+*.pyc
+__pycache__
