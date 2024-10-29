@@ -114,7 +114,7 @@ def create_plans_from_issues(
                     break
 
         plan = {
-            "description": issue["description"],
+            # "description": issue["description"],
             "id": str(issue["id"]),
             "link": issue["web_url"],
             "name": issue["title"],

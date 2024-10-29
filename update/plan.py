@@ -14,7 +14,7 @@ if typing.TYPE_CHECKING:
     import argparse
 
 
-def update_plans(plans: list[dict], args: argparse.Namespace) -> list[dict]:
+def get_updated_plans(plans: list[dict], args: argparse.Namespace) -> list[dict]:
     """
     Create plans for a battle in the Thunderdome API.
 
@@ -53,11 +53,18 @@ def update_plans(plans: list[dict], args: argparse.Namespace) -> list[dict]:
     issues = dict((val, key) for key, val in swapped_issues.items())
 
     new_plans = create_plans_from_issues(
-        issues, args.token, args.with_weighted, args.with_closed
+        issues,
+        args.token,
+        # args.label_priority,
+        None,
+        args.with_weighted,
+        args.with_closed
     )
 
     logging.info("Found %d new plans", len(new_plans))
 
-    # TODO: Thunderdome needs API support for updating games
+    if args.label_priority:
+        # Sort plans by their priority
+        new_plans.sort(key=lambda x: x["priority"])
 
-    return plans
+    return new_plans
