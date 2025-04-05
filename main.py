@@ -14,6 +14,10 @@ def init_subparsers(cli: argparse._SubParsersAction) -> None:
     subparser = cli.add_parser('game', help='Interact with the Thunderdome poker game API')
     init_subparser(subparser)
 
+    from storyboard.main import init_subparser
+    subparser = cli.add_parser('storyboard', help='Interact with the Thunderdome storyboard API')
+    init_subparser(subparser)
+
 
 def parse_args() -> argparse.Namespace:
     """
@@ -36,6 +40,10 @@ def main() -> None:
 
     if args.command == 'game':
         from game.main import main as run
+        run(args)
+
+    if args.command == 'storyboard':
+        from storyboard.main import main as run
         run(args)
 
 
