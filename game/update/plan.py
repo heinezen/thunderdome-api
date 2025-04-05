@@ -6,9 +6,9 @@ from __future__ import annotations
 import logging
 import typing
 
+from game.create.plan import create_plans_from_issues
 from util.gitlab_issue import get_issues_from_epics, get_issues_from_iterations, \
     get_issues_from_milestones, get_issues_from_projects, get_issue_info
-from create.plan import create_plans_from_issues
 
 if typing.TYPE_CHECKING:
     import argparse
