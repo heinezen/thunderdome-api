@@ -8,7 +8,7 @@ import typing
 
 import requests
 
-from update.game import update_game
+from game.update.game import update_game
 
 if typing.TYPE_CHECKING:
     import argparse

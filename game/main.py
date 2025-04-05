@@ -9,11 +9,11 @@ import logging
 
 from itertools import batched
 
-from create.game import create_game
-from create.plan import create_plans
-from fetch.point_transfer import transfer_points
-from update.game import update_game
-from update.plan import get_updated_plans
+from game.create.game import create_game
+from game.create.plan import create_plans
+from game.fetch.point_transfer import transfer_points
+from game.update.game import update_game
+from game.update.plan import get_updated_plans
 from util.thunderdome_plan import get_plans
 
 
@@ -141,8 +141,8 @@ def parse_args() -> argparse.Namespace:
                                "that are closed"))
 
     update_parser.add_argument("--label-priority", action=MapPriorityAction, nargs="*",
-                               help=("Map GitLab label names to Thunderdome priorities"
-                                     "(Example: 'high 1 medium 2')"
+                               help=("Map GitLab label names to Thunderdome priorities "
+                                     "(Example: 'prio::high 1 prio::medium 2')"
                                ))
 
     return parser.parse_args()
