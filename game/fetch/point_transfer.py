@@ -1,5 +1,5 @@
 """
-Transfer points from Thunderdome games o GitLab issues.
+Transfer points from Thunderdome games to GitLab issues.
 """
 
 import logging
