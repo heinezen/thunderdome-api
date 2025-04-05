@@ -4,7 +4,9 @@ Scripts for automating work with the API of the [Thunderdome](https://github.com
 
 ## Basic Usage
 
-### Creating Games from GitLab Items
+### Poker Games
+
+#### Creating Games from GitLab Items
 
 You need the following information to run the script:
 
@@ -14,7 +16,8 @@ You need the following information to run the script:
 Example script usage:
 
 ```bash
-python3 main.py create \
+python3 main.py game \
+                create \
                 API_KEY \
                 GITLAB_TOKEN \
                 --auto-finish \
@@ -29,7 +32,7 @@ python3 main.py create \
                 --projects https://gitlab.example.com/test-orga/thunderdome ...
 ```
 
-### Updating Existing Games from GitLab Items
+#### Updating Existing Games from GitLab Items
 
 You need the following information to run the script:
 
@@ -46,7 +49,8 @@ https://thunderdome.dev/game/abababa-1337-2342-1406-deadbeef
 Example script usage:
 
 ```bash
-python3 main.py update \
+python3 main.py game \
+                update \
                 GAME_ID \
                 API_KEY \
                 GITLAB_TOKEN \
@@ -57,7 +61,7 @@ python3 main.py update \
                 --projects https://gitlab.example.com/test-orga/thunderdome ...
 ```
 
-### Transferring Story Points to GitLab
+#### Transferring Story Points to GitLab
 
 To transfer story points from a thunderdome planning poker session, follow these steps:
 
@@ -75,5 +79,5 @@ https://thunderdome.dev/game/abababa-1337-2342-1406-deadbeef
 3. Run the script:
 
 ```bash
-python3 main.py fetch <GAME_ID> <API_KEY> <GITLAB_TOKEN>
+python3 main.py game fetch <GAME_ID> <API_KEY> <GITLAB_TOKEN>
 ```
