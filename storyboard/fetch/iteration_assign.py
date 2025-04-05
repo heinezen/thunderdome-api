@@ -67,7 +67,7 @@ def assign_iteration(
 
         # Set iteration by making a comment with a quick action
         # since GitLab does not allow setting the iteration for the issue
-        # via the API
+        # via the API.
         # see also: https://gitlab.com/gitlab-org/gitlab/-/issues/395790
         quick_action_body = f"/iteration *iteration:{iteration_id}"
         gitlab_response = requests.post(
@@ -83,3 +83,59 @@ def assign_iteration(
             continue
 
         logging.info("Set iteration to %s for %s#%s", iteration_id, project_path, issue_iid)
+
+
+def cleanup_iteration(
+    stories: list[dict],
+    iteration_issues: dict[int, str],
+    gitlab_token
+) -> None:
+    """
+    Remove iteration from GitLab issues that are not linked in the stories.
+
+    :param stories: Stories from a Thunderdome storyboard.
+    :param iteration_issues: GitLab issues assigned to the iteration.
+    :param gitlab_token: Token for the GitLab API.
+    """
+    logging.info("Removing iteration from GitLab issues that were not fetched...")
+
+    gitlab_headers = {
+        "PRIVATE-TOKEN": gitlab_token,
+    }
+
+    story_issues = set()
+    for story in stories:
+        story_issues.add(story["link"])
+
+    for issue_link in iteration_issues.values():
+        if issue_link in story_issues:
+            continue
+
+        match = re.match(GITLAB_ISSUE_URL_REGEX, issue_link)
+        if not match:
+            continue
+
+        project_path = match.group("project")
+        issue_iid = match.group("issue")
+
+        # Get project ID
+        project_id = get_project_id(issue_link, gitlab_token, GITLAB_ISSUE_URL_REGEX)
+
+        # Remove iteration by making a comment with a quick action
+        # since GitLab does not allow setting the iteration for the issue
+        # via the API.
+        # see also: https://gitlab.com/gitlab-org/gitlab/-/issues/395790
+        quick_action_body = "/remove_iteration"
+        gitlab_response = requests.post(
+            f"https://gitlab.com/api/v4/projects/{project_id}/issues/{issue_iid}/notes",
+            timeout=10,
+            headers=gitlab_headers,
+            params={'body': quick_action_body}
+        )
+
+        if not gitlab_response.ok:
+            logging.error("Failed to remove iteration for issue %s#%s",
+                          project_path, issue_iid)
+            continue
+
+        logging.info("Removed iteration for %s#%s", project_path, issue_iid)

@@ -6,8 +6,9 @@ import argparse
 import logging
 import re
 
-from storyboard.fetch.iteration_assign import assign_iteration
+from storyboard.fetch.iteration_assign import assign_iteration, cleanup_iteration
 from util.definitions import GITLAB_ITERATION_REGEX
+from util.gitlab_issue import get_issues_from_iterations
 from util.thunderdome_story import get_stories
 
 
@@ -29,9 +30,9 @@ def init_subparser(subparser: argparse.ArgumentParser) -> None:
                               help="Only fetch from goals with the specified names")
     fetch_parser.add_argument("--filter-columns", nargs="+", type=str,
                               help="Only fetch from column with the specified names")
-    fetch_parser.add_argument("--clear-iteration", action="store_true",
+    fetch_parser.add_argument("--cleanup-iteration", action="store_true",
                               help=("Clear all issues from the iteration that were "
-                                    "not fetched from the board"))
+                                    "NOT fetched from the board"))
 
 
 def main(args) -> None:
@@ -60,3 +61,7 @@ def main(args) -> None:
         iteration_id = match.group("iteration")
 
         assign_iteration(stories, iteration_id, args.token)
+
+        if args.cleanup_iteration:
+            iteration_issues = get_issues_from_iterations([args.iteration], args.token)
+            cleanup_iteration(stories, iteration_issues, args.token)
