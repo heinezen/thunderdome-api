@@ -1,7 +1,5 @@
-#!/usr/bin/env python3
-
 """
-Main entrypoint for the application.
+Main entrypoint for poker game interaction.
 """
 
 import argparse
@@ -43,16 +41,14 @@ class MapPriorityAction(argparse.Action):
         setattr(namespace, self.dest, result)
 
 
-def parse_args() -> argparse.Namespace:
+def init_subparser(subparser: argparse.ArgumentParser) -> None:
     """
-    Parse command line arguments.
+    Initializes the parser for game-specific args.
     """
 
-    parser = argparse.ArgumentParser(
-        description='Thunderdome API automation script')
-    subparsers = parser.add_subparsers(dest='command', required=True)
+    cli = subparser.add_subparsers(dest='subcommand', required=True)
 
-    fetch_parser = subparsers.add_parser(
+    fetch_parser = cli.add_parser(
         'fetch', help='Fetch battles from the Thunderdome API')
     fetch_parser.add_argument('battleid', help='Battle ID to fetch')
     fetch_parser.add_argument('api_key', help='API key for the Thunderdome API')
@@ -62,12 +58,12 @@ def parse_args() -> argparse.Namespace:
     fetch_parser.add_argument("--overwrite", action="store_true",
                               help="Overwrite existing weights")
 
-    create_parser = subparsers.add_parser(
+    create_parser = cli.add_parser(
         'create', help='Create Thunderdome battles from GitLab items')
     create_parser.add_argument('api_key', help='API key for the Thunderdome API')
     create_parser.add_argument('token', help='Token for the GitLab API')
 
-    update_parser = subparsers.add_parser(
+    update_parser = cli.add_parser(
         'update', help='Update Thunderdome battles from GitLab items')
     update_parser.add_argument('battleid', help='Battle ID to fetch')
     update_parser.add_argument('api_key', help='API key for the Thunderdome API')
@@ -145,22 +141,18 @@ def parse_args() -> argparse.Namespace:
                                      "(Example: 'prio::high 1 prio::medium 2')"
                                ))
 
-    return parser.parse_args()
 
-
-def main() -> None:
+def main(args) -> None:
     """
-    Main entrypoint.
+    Main entrypoint for game command.
     """
-    args = parse_args()
-
     logging.basicConfig(level=logging.INFO)
 
-    if args.command == "fetch":
+    if args.subcommand == "fetch":
         plans = get_plans(args.battleid, args.api_key)
         transfer_points(plans, args.token, args.overwrite)
 
-    elif args.command == "create":
+    elif args.subcommand == "create":
         plans = create_plans(args)
 
         if not plans:
@@ -169,14 +161,10 @@ def main() -> None:
 
         create_game(plans, args)
 
-    elif args.command == "update":
+    elif args.subcommand == "update":
         plans = get_plans(args.battleid, args.api_key)
 
         logging.info("Found %d unique Thunderdome plans", len(plans))
 
         new_plans = get_updated_plans(plans, args)
         update_game(args.battleid, new_plans, args)
-
-
-if __name__ == "__main__":
-    main()
